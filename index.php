@@ -126,9 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <p class="text-center mt-3 text-muted small">
-                Default admin: <strong>admin / admin123</strong>
-            </p>
         </div>
     </div>
 </div>
