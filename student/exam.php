@@ -8,7 +8,8 @@ if (!isset($_SESSION['student_id'])) {
 }
 
 $exam_id = isset($_GET['id']) ? (int)$_GET['id'] : 1;
-$exam = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM exams WHERE id=$exam_id"));
+$q_exam = mysqli_query($conn, "SELECT * FROM exams WHERE id=$exam_id");
+$exam = ($q_exam ? mysqli_fetch_assoc($q_exam) : null);
 $questions = mysqli_query($conn, "SELECT * FROM questions WHERE exam_id=$exam_id");
 $duration = $exam['duration_minutes'] ?? 30;
 ?>

@@ -7,9 +7,14 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$total_students = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) AS c FROM students"))['c'] ?? 0;
-$total_exams = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) AS c FROM exams"))['c'] ?? 0;
-$total_results = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) AS c FROM results"))['c'] ?? 0;
+$q_students = mysqli_query($conn, "SELECT COUNT(*) AS c FROM students");
+$total_students = ($q_students ? mysqli_fetch_assoc($q_students)['c'] : 0);
+
+$q_exams = mysqli_query($conn, "SELECT COUNT(*) AS c FROM exams");
+$total_exams = ($q_exams ? mysqli_fetch_assoc($q_exams)['c'] : 0);
+
+$q_results = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results");
+$total_results = ($q_results ? mysqli_fetch_assoc($q_results)['c'] : 0);
 ?>
 
 <div class="mb-4">

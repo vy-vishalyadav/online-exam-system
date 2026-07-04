@@ -24,12 +24,12 @@ if (session_status() === PHP_SESSION_NONE) {
                 <span class="navbar-text text-white me-3">
                     <i class="bi bi-person-circle"></i> <?php echo htmlspecialchars($_SESSION['student_name']); ?>
                 </span>
-                <a href="../index.php" class="btn btn-light btn-sm">Logout</a>
+                <a href="../index.php?action=logout" class="btn btn-light btn-sm">Logout</a>
             <?php elseif (isset($_SESSION['admin_username'])): ?>
                 <span class="navbar-text text-white me-3">
                     <i class="bi bi-shield-lock"></i> <?php echo htmlspecialchars($_SESSION['admin_username']); ?>
                 </span>
-                <a href="../index.php" class="btn btn-light btn-sm">Logout</a>
+                <a href="../index.php?action=logout" class="btn btn-light btn-sm">Logout</a>
             <?php endif; ?>
         </div>
     </div>
