@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: student/dashboard.php");
             exit;
         } else {
-            $error = "Invalid student email or password.";
+            $error = "Invalid Student ID or password.";
         }
     } elseif ($role === 'admin') {
         $username = mysqli_real_escape_string($conn, $_POST['username'] ?? '');
@@ -101,8 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <form method="POST" action="">
                         <input type="hidden" name="role" value="student">
                         <div class="mb-3">
-                            <label class="form-label">Email Address</label>
-                            <input type="email" name="email" class="form-control" placeholder="student@example.com" required>
+                            <label class="form-label">Student ID</label>
+                            <input type="email" name="email" class="form-control" placeholder="rollno@institute.com" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Password</label>

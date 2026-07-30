@@ -14,22 +14,22 @@ if (session_status() === PHP_SESSION_NONE) {
     <link rel="stylesheet" href="<?php echo (strpos($_SERVER['PHP_SELF'], '/student/') !== false || strpos($_SERVER['PHP_SELF'], '/admin/') !== false) ? '../css/style.css' : 'css/style.css'; ?>">
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+<nav class="navbar navbar-dark bg-primary shadow-sm">
     <div class="container">
         <a class="navbar-brand fw-bold" href="#">
             <i class="bi bi-mortarboard-fill"></i> Online Exam System
         </a>
-        <div class="d-flex">
+        <div class="d-flex align-items-center">
             <?php if (isset($_SESSION['student_name'])): ?>
                 <span class="navbar-text text-white me-3">
                     <i class="bi bi-person-circle"></i> <?php echo htmlspecialchars($_SESSION['student_name']); ?>
                 </span>
-                <a href="../index.php?action=logout" class="btn btn-light btn-sm">Logout</a>
+                <a href="../index.php?action=logout" class="btn btn-light btn-sm fw-semibold">Logout</a>
             <?php elseif (isset($_SESSION['admin_username'])): ?>
                 <span class="navbar-text text-white me-3">
                     <i class="bi bi-shield-lock"></i> <?php echo htmlspecialchars($_SESSION['admin_username']); ?>
                 </span>
-                <a href="../index.php?action=logout" class="btn btn-light btn-sm">Logout</a>
+                <a href="../index.php?action=logout" class="btn btn-light btn-sm fw-semibold">Logout</a>
             <?php endif; ?>
         </div>
     </div>
