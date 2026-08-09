@@ -12,23 +12,26 @@ $success = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim(mysqli_real_escape_string($conn, $_POST['name'] ?? ''));
-    $email = trim(mysqli_real_escape_string($conn, $_POST['email'] ?? ''));
-    $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
+    
+    // Auto-generate Student ID and Password
+    $generated_roll = rand(10000, 99999);
+    $email = "roll" . $generated_roll . "@institute.com";
+    $password = "student123"; // Default password for all students
 
-    if (empty($name) || empty($email) || empty($password)) {
-        $error = "All fields are required.";
+    if (empty($name)) {
+        $error = "Full Name is required.";
     } else {
-        // Check if Student ID (email) already exists
+        // Check if Student ID (email) already exists (rare with rand, but good to check)
         $check_query = "SELECT id FROM students WHERE email = '$email' LIMIT 1";
         $check_result = mysqli_query($conn, $check_query);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $error = "Student ID '$email' already exists! Please use a unique Student ID.";
+            $error = "A generation error occurred (duplicate ID). Please try again.";
         } else {
             // Insert student into database
             $insert_query = "INSERT INTO students (name, email, password) VALUES ('$name', '$email', '$password')";
             if (mysqli_query($conn, $insert_query)) {
-                $success = "Student '$name' ($email) added successfully!";
+                $success = "Student '$name' added successfully! Student ID: $email, Password: $password";
             } else {
                 $error = "Error adding student: " . mysqli_error($conn);
             }
@@ -77,21 +80,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Student ID</label>
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                    <input type="email" name="email" class="form-control" placeholder="rollno@institute.com" required>
-                </div>
-                <div class="form-text">Example format: <code>rollno@institute.com</code></div>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Password</label>
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-key"></i></span>
-                    <input type="password" name="password" class="form-control" placeholder="Enter student password" required>
-                </div>
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle-fill me-2"></i> <strong>Note:</strong> Student ID and Password will be automatically generated. The default password is <code>student123</code>.
             </div>
 
             <div class="d-flex gap-2 mt-4">
