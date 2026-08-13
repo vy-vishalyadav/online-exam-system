@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS admin (
 );
 
 -- Default admin account: admin / admin123
-INSERT INTO admin (username, password) VALUES ('admin', 'admin123');
+INSERT INTO admin (username, password) 
+SELECT 'admin', 'admin123'
+WHERE NOT EXISTS (SELECT * FROM admin WHERE username = 'admin');
 
 -- Exams table
 CREATE TABLE IF NOT EXISTS exams (
@@ -53,12 +55,54 @@ CREATE TABLE IF NOT EXISTS results (
     FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
 );
 
--- Sample data for testing
-INSERT INTO students (name, email, password) VALUES
-('John Doe', 'john@example.com', 'student123'),
-('Jane Smith', 'jane@example.com', 'student123');
+-- Insert sample students if not exists
+INSERT INTO students (id, name, email, password) VALUES
+(1, 'John Doe', 'john@example.com', 'student123'),
+(2, 'Jane Smith', 'jane@example.com', 'student123'),
+(3, 'Demo Student', 'student@example.com', 'student123')
+ON DUPLICATE KEY UPDATE name=VALUES(name);
 
-INSERT INTO exams (title, duration_minutes) VALUES
-('General Knowledge Quiz', 30),
-('Computer Fundamentals', 45),
-('Mathematics Basics', 60);
+-- Insert sample exams if not exists
+INSERT INTO exams (id, title, duration_minutes) VALUES
+(1, 'General Knowledge Quiz', 15),
+(2, 'Computer Fundamentals', 20),
+(3, 'Mathematics Basics', 25),
+(4, 'Web Development Basics', 30)
+ON DUPLICATE KEY UPDATE title=VALUES(title), duration_minutes=VALUES(duration_minutes);
+
+-- Sample Questions for Exam 1: General Knowledge Quiz
+INSERT IGNORE INTO questions (id, exam_id, question_text, option_a, option_b, option_c, option_d, correct_option) VALUES
+(1, 1, 'Which planet is known as the Red Planet?', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'B'),
+(2, 1, 'What is the capital city of France?', 'Madrid', 'Berlin', 'Paris', 'Rome', 'C'),
+(3, 1, 'Who painted the Mona Lisa?', 'Vincent van Gogh', 'Pablo Picasso', 'Leonardo da Vinci', 'Claude Monet', 'C'),
+(4, 1, 'Which element has the chemical symbol "O"?', 'Gold', 'Oxygen', 'Osmium', 'Silver', 'B'),
+(5, 1, 'What is the largest ocean on Earth?', 'Atlantic Ocean', 'Indian Ocean', 'Arctic Ocean', 'Pacific Ocean', 'D');
+
+-- Sample Questions for Exam 2: Computer Fundamentals
+INSERT IGNORE INTO questions (id, exam_id, question_text, option_a, option_b, option_c, option_d, correct_option) VALUES
+(6, 2, 'What does CPU stand for?', 'Central Processing Unit', 'Computer Personal Unit', 'Central Process Utility', 'Central Peripheral Unit', 'A'),
+(7, 2, 'Which of the following is volatile memory?', 'ROM', 'RAM', 'Hard Disk', 'SSD', 'B'),
+(8, 2, 'What is the main function of an Operating System?', 'Manage hardware and software resources', 'Design graphics', 'Compile programs', 'Create spreadsheets', 'A'),
+(9, 2, 'Which protocol is used to transfer web pages over the internet?', 'FTP', 'SMTP', 'HTTP', 'SNMP', 'C'),
+(10, 2, 'What binary digit represents TRUE state?', '0', '1', '-1', 'NULL', 'B');
+
+-- Sample Questions for Exam 3: Mathematics Basics
+INSERT IGNORE INTO questions (id, exam_id, question_text, option_a, option_b, option_c, option_d, correct_option) VALUES
+(11, 3, 'What is the square root of 144?', '10', '11', '12', '14', 'C'),
+(12, 3, 'What is the value of Pi rounded to 2 decimal places?', '3.14', '3.16', '3.12', '3.18', 'A'),
+(13, 3, 'Solve for x: 2x + 5 = 15', 'x = 3', 'x = 5', 'x = 10', 'x = 7', 'B'),
+(14, 3, 'What is 15% of 200?', '20', '25', '30', '35', 'C'),
+(15, 3, 'How many sides does a hexagon have?', '5', '6', '7', '8', 'B');
+
+-- Sample Questions for Exam 4: Web Development Basics
+INSERT IGNORE INTO questions (id, exam_id, question_text, option_a, option_b, option_c, option_d, correct_option) VALUES
+(16, 4, 'What does HTML stand for?', 'Hyper Text Markup Language', 'High Tech Markup Language', 'Hyperlink Text Management Language', 'Home Tool Markup Language', 'A'),
+(17, 4, 'Which CSS property is used to change text color?', 'font-color', 'text-color', 'color', 'background-color', 'C'),
+(18, 4, 'Which HTML tag is used to define an internal style sheet?', '<script>', '<style>', '<css>', '<link>', 'B'),
+(19, 4, 'Which superglobal variable in PHP is used to collect form data sent with method="POST"?', '$_GET', '$_REQUEST', '$_SESSION', '$_POST', 'D'),
+(20, 4, 'Which SQL command is used to retrieve data from a database?', 'GET', 'SELECT', 'FETCH', 'EXTRACT', 'B');
+
+-- Sample Exam Results
+INSERT IGNORE INTO results (id, student_id, exam_id, score, attempted_at) VALUES
+(1, 1, 1, 80, NOW() - INTERVAL 2 DAY),
+(2, 2, 2, 60, NOW() - INTERVAL 1 DAY);

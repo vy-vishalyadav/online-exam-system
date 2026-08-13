@@ -12,26 +12,30 @@ $success = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim(mysqli_real_escape_string($conn, $_POST['name'] ?? ''));
-    
-    // Auto-generate Student ID and Password
-    $generated_roll = rand(10000, 99999);
-    $email = "roll" . $generated_roll . "@institute.com";
-    $password = "student123"; // Default password for all students
+    $email = trim(mysqli_real_escape_string($conn, $_POST['email'] ?? ''));
+    $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
+
+    if (empty($email)) {
+        $generated_roll = rand(10000, 99999);
+        $email = "roll" . $generated_roll . "@institute.com";
+    }
+
+    if (empty($password)) {
+        $password = "student123";
+    }
 
     if (empty($name)) {
         $error = "Full Name is required.";
     } else {
-        // Check if Student ID (email) already exists (rare with rand, but good to check)
         $check_query = "SELECT id FROM students WHERE email = '$email' LIMIT 1";
         $check_result = mysqli_query($conn, $check_query);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $error = "A generation error occurred (duplicate ID). Please try again.";
+            $error = "A student with email/ID '$email' already exists.";
         } else {
-            // Insert student into database
             $insert_query = "INSERT INTO students (name, email, password) VALUES ('$name', '$email', '$password')";
             if (mysqli_query($conn, $insert_query)) {
-                $success = "Student '$name' added successfully! Student ID: $email, Password: $password";
+                $success = "Student '$name' added successfully! Student ID / Email: $email, Password: $password";
             } else {
                 $error = "Error adding student: " . mysqli_error($conn);
             }
@@ -50,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <i class="bi bi-people-fill me-1"></i> Manage Students
         </a>
         <a href="dashboard.php" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back to Dashboard
+            <i class="bi bi-arrow-left"></i> Dashboard
         </a>
     </div>
 </div>
@@ -69,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 <?php endif; ?>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm border-0 rounded-4">
     <div class="card-body p-4">
         <form method="POST" action="">
             <div class="mb-3">
@@ -80,13 +84,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle-fill me-2"></i> <strong>Note:</strong> Student ID and Password will be automatically generated. The default password is <code>student123</code>.
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Email / Student ID (Optional)</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                    <input type="email" name="email" class="form-control" placeholder="Leave empty for auto-generated email ID">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Password (Optional)</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-key"></i></span>
+                    <input type="text" name="password" class="form-control" placeholder="Default: student123">
+                </div>
+            </div>
+
+            <div class="alert alert-info border-0 bg-info-subtle">
+                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Email or Password is left empty, system auto-generates them. Default password is <code>student123</code>.
             </div>
 
             <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="btn btn-primary px-4">
-                    <i class="bi bi-check-circle me-1"></i> Add Student
+                <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm">
+                    <i class="bi bi-check-circle me-1"></i> Save Student
                 </button>
                 <a href="manage-students.php" class="btn btn-outline-secondary">
                     Cancel

@@ -13,8 +13,7 @@ $success = "";
 // Handle Delete Student
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $delete_id = (int)$_GET['id'];
-    $delete_query = "DELETE FROM students WHERE id = $delete_id";
-    if (mysqli_query($conn, $delete_query)) {
+    if (mysqli_query($conn, "DELETE FROM students WHERE id = $delete_id")) {
         $success = "Student deleted successfully!";
     } else {
         $error = "Failed to delete student: " . mysqli_error($conn);
@@ -24,26 +23,32 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])
 // Handle Add Student POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     $name = trim(mysqli_real_escape_string($conn, $_POST['name'] ?? ''));
-    
-    // Auto-generate Student ID and Password
-    $generated_roll = rand(10000, 99999);
-    $email = "roll" . $generated_roll . "@institute.com";
-    $password = "student123"; // Default password for all students
+    $email = trim(mysqli_real_escape_string($conn, $_POST['email'] ?? ''));
+    $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
+
+    // Auto generate email if empty
+    if (empty($email)) {
+        $generated_roll = rand(10000, 99999);
+        $email = "roll" . $generated_roll . "@institute.com";
+    }
+
+    // Default password if empty
+    if (empty($password)) {
+        $password = "student123";
+    }
 
     if (empty($name)) {
         $error = "Full Name is required.";
     } else {
-        // Check if Student ID (email) already exists (rare with rand, but good to check)
         $check_query = "SELECT id FROM students WHERE email = '$email' LIMIT 1";
         $check_result = mysqli_query($conn, $check_query);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $error = "A generation error occurred (duplicate ID). Please try again.";
+            $error = "A student with email/ID '$email' already exists.";
         } else {
-            // Insert student into database
             $insert_query = "INSERT INTO students (name, email, password) VALUES ('$name', '$email', '$password')";
             if (mysqli_query($conn, $insert_query)) {
-                $success = "Student '$name' added successfully! Student ID: $email, Password: $password";
+                $success = "Student '$name' added successfully! Email: $email, Password: $password";
             } else {
                 $error = "Error adding student: " . mysqli_error($conn);
             }
@@ -51,19 +56,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     }
 }
 
+// Handle Edit Student POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
+    $student_id = (int)$_POST['student_id'];
+    $name = trim(mysqli_real_escape_string($conn, $_POST['name'] ?? ''));
+    $email = trim(mysqli_real_escape_string($conn, $_POST['email'] ?? ''));
+    $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
+
+    if (empty($name) || empty($email) || empty($password)) {
+        $error = "All fields are required for editing.";
+    } else {
+        $check_query = "SELECT id FROM students WHERE email = '$email' AND id != $student_id LIMIT 1";
+        $check_result = mysqli_query($conn, $check_query);
+
+        if ($check_result && mysqli_num_rows($check_result) > 0) {
+            $error = "Email/ID '$email' is already used by another student.";
+        } else {
+            $update_query = "UPDATE students SET name='$name', email='$email', password='$password' WHERE id=$student_id";
+            if (mysqli_query($conn, $update_query)) {
+                $success = "Student details updated successfully!";
+            } else {
+                $error = "Error updating student: " . mysqli_error($conn);
+            }
+        }
+    }
+}
+
 // Fetch all students
-$students_query = "SELECT * FROM students ORDER BY id DESC";
+$students_query = "SELECT s.*, (SELECT COUNT(*) FROM results r WHERE r.student_id = s.id) AS exam_count FROM students s ORDER BY s.id DESC";
 $students_result = mysqli_query($conn, $students_query);
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h4 class="fw-bold mb-0"><i class="bi bi-people-fill text-primary"></i> Manage Students</h4>
-        <small class="text-muted">Add, view, and manage all student accounts.</small>
+        <small class="text-muted">Register, edit, delete, and manage student credentials.</small>
     </div>
     <div>
         <a href="dashboard.php" class="btn btn-outline-secondary me-2">
-            <i class="bi bi-arrow-left"></i> Back to Dashboard
+            <i class="bi bi-arrow-left"></i> Dashboard
         </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addStudentModal">
             <i class="bi bi-person-plus-fill me-1"></i> Add Student
@@ -85,21 +116,22 @@ $students_result = mysqli_query($conn, $students_query);
     </div>
 <?php endif; ?>
 
-<div class="card shadow-sm mb-4">
+<div class="card shadow-sm border-0 rounded-4 mb-4">
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-        <h6 class="mb-0 fw-bold text-primary"><i class="bi bi-list-task me-1"></i> Student List</h6>
-        <span class="badge bg-primary rounded-pill"><?php echo ($students_result ? mysqli_num_rows($students_result) : 0); ?> Total Students</span>
+        <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-list-task me-1 text-primary"></i> Registered Students</h6>
+        <span class="badge bg-primary rounded-pill px-3 py-1"><?php echo ($students_result ? mysqli_num_rows($students_result) : 0); ?> Total Students</span>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+            <table class="table custom-table align-middle mb-0">
+                <thead>
                     <tr>
-                        <th class="ps-3">#</th>
+                        <th class="ps-4">#</th>
                         <th>Student Name</th>
-                        <th>Student ID (Email)</th>
+                        <th>Email / Student ID</th>
                         <th>Password</th>
-                        <th class="text-center pe-3">Action</th>
+                        <th>Exams Attempted</th>
+                        <th class="text-center pe-4">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -109,22 +141,70 @@ $students_result = mysqli_query($conn, $students_query);
                         while ($student = mysqli_fetch_assoc($students_result)):
                     ?>
                         <tr>
-                            <td class="ps-3 fw-bold"><?php echo $i++; ?></td>
+                            <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
                             <td>
-                                <div class="fw-semibold text-dark"><?php echo htmlspecialchars($student['name']); ?></div>
+                                <div class="fw-bold text-dark"><?php echo htmlspecialchars($student['name']); ?></div>
                             </td>
                             <td>
-                                <span class="badge bg-light text-dark border font-monospace">
-                                    <i class="bi bi-card-text me-1"></i><?php echo htmlspecialchars($student['email']); ?>
+                                <span class="badge bg-light text-dark border font-monospace fs-6">
+                                    <i class="bi bi-envelope me-1 text-primary"></i><?php echo htmlspecialchars($student['email']); ?>
                                 </span>
                             </td>
                             <td><code><?php echo htmlspecialchars($student['password']); ?></code></td>
-                            <td class="text-center pe-3">
-                                <a href="manage-students.php?action=delete&id=<?php echo $student['id']; ?>" 
-                                   class="btn btn-sm btn-outline-danger" 
-                                   onclick="return confirm('Are you sure you want to delete student &quot;<?php echo htmlspecialchars($student['name']); ?>&quot;?');">
-                                    <i class="bi bi-trash-fill"></i> Delete
-                                </a>
+                            <td>
+                                <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill">
+                                    <?php echo $student['exam_count']; ?> attempt(s)
+                                </span>
+                            </td>
+                            <td class="text-center pe-4">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editStudentModal<?php echo $student['id']; ?>">
+                                        <i class="bi bi-pencil"></i> Edit
+                                    </button>
+                                    <a href="manage-students.php?action=delete&id=<?php echo $student['id']; ?>" 
+                                       class="btn btn-outline-danger" 
+                                       onclick="return confirm('Are you sure you want to delete student &quot;<?php echo htmlspecialchars($student['name']); ?>&quot;?');">
+                                        <i class="bi bi-trash-fill"></i> Delete
+                                    </a>
+                                </div>
+
+                                <!-- Edit Student Modal -->
+                                <div class="modal fade text-start" id="editStudentModal<?php echo $student['id']; ?>" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form method="POST" action="manage-students.php">
+                                                <div class="modal-header bg-light">
+                                                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Student</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body p-4">
+                                                    <input type="hidden" name="edit_student" value="1">
+                                                    <input type="hidden" name="student_id" value="<?php echo $student['id']; ?>">
+                                                    
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold">Full Name</label>
+                                                        <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($student['name']); ?>" required>
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold">Email / Student ID</label>
+                                                        <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($student['email']); ?>" required>
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold">Password</label>
+                                                        <input type="text" name="password" class="form-control" value="<?php echo htmlspecialchars($student['password']); ?>" required>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer bg-light">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-primary">Update Student</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
                             </td>
                         </tr>
                     <?php
@@ -132,7 +212,7 @@ $students_result = mysqli_query($conn, $students_query);
                     else:
                     ?>
                         <tr>
-                            <td colspan="5" class="text-center text-muted py-4">
+                            <td colspan="6" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i> No students registered yet. Click "Add Student" to create one.
                             </td>
                         </tr>
@@ -144,12 +224,12 @@ $students_result = mysqli_query($conn, $students_query);
 </div>
 
 <!-- Add Student Modal -->
-<div class="modal fade" id="addStudentModal" tabindex="-1" aria-labelledby="addStudentModalLabel" aria-hidden="true">
+<div class="modal fade" id="addStudentModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST" action="manage-students.php">
                 <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title fw-bold" id="addStudentModalLabel">
+                    <h5 class="modal-title fw-bold">
                         <i class="bi bi-person-plus-fill me-2"></i>Add New Student
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -165,8 +245,24 @@ $students_result = mysqli_query($conn, $students_query);
                         </div>
                     </div>
 
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle-fill me-2"></i> <strong>Note:</strong> Student ID and Password will be automatically generated. The default password is <code>student123</code>.
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Email / Student ID (Optional)</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                            <input type="email" name="email" class="form-control" placeholder="Leave empty for auto-generated ID">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Password (Optional)</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                            <input type="text" name="password" class="form-control" placeholder="Default: student123">
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info py-2 small mb-0">
+                        <i class="bi bi-info-circle-fill me-1"></i> If email or password is left blank, an ID will be auto-generated with password <code>student123</code>.
                     </div>
                 </div>
                 <div class="modal-footer bg-light">
@@ -179,5 +275,16 @@ $students_result = mysqli_query($conn, $students_query);
         </div>
     </div>
 </div>
+
+<?php 
+if (isset($_GET['action']) && $_GET['action'] === 'new'): 
+?>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var modal = new bootstrap.Modal(document.getElementById('addStudentModal'));
+        modal.show();
+    });
+</script>
+<?php endif; ?>
 
 <?php include '../includes/footer.php'; ?>

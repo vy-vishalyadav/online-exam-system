@@ -1,131 +1,321 @@
-/* Online Exam System - Custom Styles */
+/* Online Exam System - Modern High-Contrast Stylesheet */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --primary-color: #4f46e5;
+    --primary-hover: #4338ca;
+    --secondary-color: #64748b;
+    --success-color: #10b981;
+    --danger-color: #ef4444;
+    --warning-color: #f59e0b;
+    --info-color: #06b6d4;
+    --bg-body: #f1f5f9;
+    --card-bg: #ffffff;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --border-color: #cbd5e1;
+
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.1);
+    --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.15);
+}
 
 body {
-    background: #f4f6f9;
-    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background-color: var(--bg-body) !important;
+    color: var(--text-main) !important;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
 
-.container {
+.main-content {
     flex: 1;
+}
+
+/* ==========================================================================
+   Navbar - Dark Navy High-Contrast Header
+   ========================================================================== */
+.navbar-custom {
+    background-color: #0f172a !important;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25) !important;
+    padding: 0.85rem 0 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.navbar-custom .navbar-brand {
+    font-weight: 800 !important;
+    font-size: 1.3rem !important;
+    color: #ffffff !important;
+    letter-spacing: -0.3px;
+}
+
+.navbar-custom .nav-link {
+    color: #cbd5e1 !important;
+    font-weight: 600 !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+.navbar-custom .nav-link:hover {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.navbar-custom .nav-link.active {
+    color: #ffffff !important;
+    background: #4f46e5 !important;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.4) !important;
+}
+
+.user-badge {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    backdrop-filter: blur(10px);
+    border-radius: 30px !important;
+    padding: 0.4rem 1rem !important;
+    color: #ffffff !important;
+    font-size: 0.875rem !important;
+    font-weight: 700 !important;
+}
+
+.btn-logout {
+    background-color: #ef4444 !important;
+    color: #ffffff !important;
+    border: none !important;
+    font-weight: 700 !important;
+    padding: 0.4rem 1.1rem !important;
+    border-radius: 30px !important;
+    transition: background 0.2s ease !important;
+}
+
+.btn-logout:hover {
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+}
+
+/* ==========================================================================
+   Stat Cards - Rich Gradient Backgrounds & White Text
+   ========================================================================== */
+.stat-card {
+    border: none !important;
+    border-radius: 16px !important;
+    padding: 1.6rem !important;
+    box-shadow: var(--shadow-md) !important;
+    transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+    position: relative !important;
+    overflow: hidden !important;
+    color: #ffffff !important;
+}
+
+.stat-card * {
+    color: #ffffff !important;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+.stat-card .stat-icon {
+    font-size: 3.5rem !important;
+    opacity: 0.3 !important;
+    position: absolute !important;
+    right: 1rem !important;
+    bottom: 0.5rem !important;
+    color: #ffffff !important;
+}
+
+/* Stat card color variants */
+.stat-card-blue, .bg-gradient-blue {
+    background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%) !important;
+}
+
+.stat-card-green, .bg-gradient-green {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+}
+
+.stat-card-purple {
+    background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%) !important;
+}
+
+.stat-card-orange, .bg-gradient-orange {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
+}
+
+/* ==========================================================================
+   Action & Feature Cards
+   ========================================================================== */
+.hover-card {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+    box-shadow: var(--shadow-sm) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.hover-card:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: var(--shadow-md) !important;
+    border-color: #cbd5e1 !important;
 }
 
 /* Login Page */
 .login-wrapper {
-    min-height: 80vh;
+    min-height: 82vh;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .login-card {
-    max-width: 450px;
-    width: 100%;
-    border: none;
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    border: none !important;
+    border-radius: 20px !important;
+    box-shadow: var(--shadow-lg) !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+}
+
+.login-header {
+    background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%) !important;
+    color: #ffffff !important;
+    padding: 2rem !important;
+}
+
+.login-card .nav-tabs {
+    border-bottom: 2px solid #e2e8f0 !important;
 }
 
 .login-card .nav-tabs .nav-link {
-    color: #555;
-    font-weight: 500;
-    border: none;
-    padding: 12px 20px;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    border: none !important;
+    padding: 1rem 1.2rem !important;
+    border-bottom: 3px solid transparent !important;
+    transition: all 0.2s ease !important;
 }
 
 .login-card .nav-tabs .nav-link.active {
-    color: #0d6efd;
-    border-bottom: 3px solid #0d6efd;
-    background: transparent;
+    color: #4f46e5 !important;
+    border-bottom-color: #4f46e5 !important;
+    background: transparent !important;
 }
 
-/* Stat Cards */
-.stat-card {
-    border: none;
-    border-radius: 10px;
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transition: transform 0.2s;
-}
-
-.stat-card:hover {
-    transform: translateY(-4px);
-}
-
-.stat-card .stat-icon {
-    font-size: 2.5rem;
-    opacity: 0.7;
-}
-
-.bg-gradient-blue { background: linear-gradient(135deg, #4e73df, #224abe); }
-.bg-gradient-green { background: linear-gradient(135deg, #1cc88a, #13855c); }
-.bg-gradient-orange { background: linear-gradient(135deg, #f6c23e, #dda20a); }
-
-/* Exam Page */
+/* ==========================================================================
+   Question Cards & Options
+   ========================================================================== */
 .question-card {
-    background: #fff;
-    border-radius: 10px;
-    padding: 25px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 1.75rem !important;
+    margin-bottom: 1.5rem !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
-.question-card .form-check {
-    padding: 10px 35px;
-    margin-bottom: 8px;
-    border-radius: 6px;
-    transition: background 0.2s;
+.option-wrapper {
+    display: flex;
+    align-items: center;
+    padding: 0.9rem 1.2rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    background: #ffffff;
+    transition: all 0.2s ease;
 }
 
-.question-card .form-check:hover {
-    background: #f0f4ff;
+.option-wrapper:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
 }
 
+.option-wrapper.selected {
+    background: #eef2ff !important;
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 1px #4f46e5 !important;
+}
+
+.option-wrapper input[type="radio"] {
+    margin-right: 0.85rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    accent-color: #4f46e5;
+}
+
+/* Timer Box */
 .timer-box {
-    background: #dc3545;
-    color: #fff;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 1.1rem;
-    display: inline-block;
+    background: #0f172a !important;
+    color: #ffffff !important;
+    padding: 0.6rem 1.25rem !important;
+    border-radius: 30px !important;
+    font-weight: 700 !important;
+    font-size: 1.05rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.3) !important;
 }
 
-/* Tables */
-.table thead {
-    background: #0d6efd;
-    color: #fff;
+.timer-box.warning {
+    background: #ef4444 !important;
+    animation: pulse 1s infinite alternate;
 }
 
-.table thead th {
-    border: none;
-    padding: 12px;
+@keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.05); }
 }
 
-/* Exam list cards */
-.exam-card {
-    border: none;
-    border-left: 4px solid #0d6efd;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    transition: transform 0.2s;
+/* ==========================================================================
+   Tables & Badges
+   ========================================================================== */
+.custom-table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
 }
 
-.exam-card:hover {
-    transform: translateX(4px);
+.custom-table thead th {
+    background: #f8fafc !important;
+    color: #334155 !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    padding: 1rem 1.25rem !important;
+    border-bottom: 2px solid #e2e8f0 !important;
 }
 
-.hover-lift {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+.custom-table tbody td {
+    padding: 1rem 1.25rem !important;
+    vertical-align: middle !important;
+    border-bottom: 1px solid #f1f5f9 !important;
 }
 
-.hover-lift:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1) !important;
+.custom-table tbody tr:hover {
+    background-color: #f8fafc !important;
+}
+
+.btn-primary {
+    background-color: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    padding: 0.6rem 1.3rem !important;
+    transition: all 0.2s ease !important;
+}
+
+.btn-primary:hover {
+    background-color: #4338ca !important;
+    border-color: #4338ca !important;
 }
 
 footer {
-    margin-top: auto;
+    background: #ffffff !important;
+    border-top: 1px solid #e2e8f0 !important;
+    padding: 1.25rem 0 !important;
+    margin-top: auto !important;
 }
