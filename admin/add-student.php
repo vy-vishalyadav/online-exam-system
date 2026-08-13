@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($email)) {
         $generated_roll = rand(10000, 99999);
-        $email = "roll" . $generated_roll . "@institute.com";
+        $email = (string)$generated_roll;
     }
 
     if (empty($password)) {
@@ -31,11 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $check_result = mysqli_query($conn, $check_query);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $error = "A student with email/ID '$email' already exists.";
+            $error = "A student with Student ID '$email' already exists.";
         } else {
             $insert_query = "INSERT INTO students (name, email, password) VALUES ('$name', '$email', '$password')";
             if (mysqli_query($conn, $insert_query)) {
-                $success = "Student '$name' added successfully! Student ID / Email: $email, Password: $password";
+                $success = "Student '$name' added successfully! Student ID: $email, Password: $password";
             } else {
                 $error = "Error adding student: " . mysqli_error($conn);
             }
@@ -85,10 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="mb-3">
-                <label class="form-label fw-semibold">Email / Student ID (Optional)</label>
+                <label class="form-label fw-semibold">Student ID (Optional)</label>
                 <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                    <input type="email" name="email" class="form-control" placeholder="Leave empty for auto-generated email ID">
+                    <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                    <input type="text" name="email" class="form-control" placeholder="Leave empty for auto-generated numeric ID (e.g. 96579)">
                 </div>
             </div>
 
@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="alert alert-info border-0 bg-info-subtle">
-                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Email or Password is left empty, system auto-generates them. Default password is <code>student123</code>.
+                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Student ID or Password is left empty, system auto-generates a numeric ID. Default password is <code>student123</code>.
             </div>
 
             <div class="d-flex gap-2 mt-4">

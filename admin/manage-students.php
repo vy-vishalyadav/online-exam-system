@@ -26,10 +26,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     $email = trim(mysqli_real_escape_string($conn, $_POST['email'] ?? ''));
     $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
 
-    // Auto generate email if empty
+    // Auto generate Student ID if empty
     if (empty($email)) {
         $generated_roll = rand(10000, 99999);
-        $email = "roll" . $generated_roll . "@institute.com";
+        $email = (string)$generated_roll;
     }
 
     // Default password if empty
@@ -44,11 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
         $check_result = mysqli_query($conn, $check_query);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $error = "A student with email/ID '$email' already exists.";
+            $error = "A student with Student ID '$email' already exists.";
         } else {
             $insert_query = "INSERT INTO students (name, email, password) VALUES ('$name', '$email', '$password')";
             if (mysqli_query($conn, $insert_query)) {
-                $success = "Student '$name' added successfully! Email: $email, Password: $password";
+                $success = "Student '$name' added successfully! Student ID: $email, Password: $password";
             } else {
                 $error = "Error adding student: " . mysqli_error($conn);
             }
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
         $check_result = mysqli_query($conn, $check_query);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $error = "Email/ID '$email' is already used by another student.";
+            $error = "Student ID '$email' is already used by another student.";
         } else {
             $update_query = "UPDATE students SET name='$name', email='$email', password='$password' WHERE id=$student_id";
             if (mysqli_query($conn, $update_query)) {
@@ -128,7 +128,7 @@ $students_result = mysqli_query($conn, $students_query);
                     <tr>
                         <th class="ps-4">#</th>
                         <th>Student Name</th>
-                        <th>Email / Student ID</th>
+                        <th>Student ID</th>
                         <th>Password</th>
                         <th>Exams Attempted</th>
                         <th class="text-center pe-4">Action</th>
@@ -147,7 +147,7 @@ $students_result = mysqli_query($conn, $students_query);
                             </td>
                             <td>
                                 <span class="badge bg-light text-dark border font-monospace fs-6">
-                                    <i class="bi bi-envelope me-1 text-primary"></i><?php echo htmlspecialchars($student['email']); ?>
+                                    <i class="bi bi-person-badge me-1 text-primary"></i><?php echo htmlspecialchars($student['email']); ?>
                                 </span>
                             </td>
                             <td><code><?php echo htmlspecialchars($student['password']); ?></code></td>
@@ -187,8 +187,8 @@ $students_result = mysqli_query($conn, $students_query);
                                                     </div>
 
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Email / Student ID</label>
-                                                        <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($student['email']); ?>" required>
+                                                        <label class="form-label fw-semibold">Student ID</label>
+                                                        <input type="text" name="email" class="form-control" value="<?php echo htmlspecialchars($student['email']); ?>" required>
                                                     </div>
 
                                                     <div class="mb-3">
@@ -246,10 +246,10 @@ $students_result = mysqli_query($conn, $students_query);
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Email / Student ID (Optional)</label>
+                        <label class="form-label fw-semibold">Student ID (Optional)</label>
                         <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                            <input type="email" name="email" class="form-control" placeholder="Leave empty for auto-generated ID">
+                            <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                            <input type="text" name="email" class="form-control" placeholder="Leave empty for auto-generated ID (e.g. 96579)">
                         </div>
                     </div>
 
@@ -262,7 +262,7 @@ $students_result = mysqli_query($conn, $students_query);
                     </div>
 
                     <div class="alert alert-info py-2 small mb-0">
-                        <i class="bi bi-info-circle-fill me-1"></i> If email or password is left blank, an ID will be auto-generated with password <code>student123</code>.
+                        <i class="bi bi-info-circle-fill me-1"></i> If Student ID or password is left blank, a numeric ID will be auto-generated with default password <code>student123</code>.
                     </div>
                 </div>
                 <div class="modal-footer bg-light">

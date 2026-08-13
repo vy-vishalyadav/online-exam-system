@@ -110,7 +110,7 @@ $pass_rate = $total_attempts > 0 ? round(($passed_count / $total_attempts) * 100
             <div class="col-md-6 col-lg-5">
                 <div class="input-group">
                     <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="search" class="form-control" placeholder="Search by student name, email or exam title..." value="<?php echo htmlspecialchars($search); ?>">
+                    <input type="text" name="search" class="form-control" placeholder="Search by student name, Student ID or exam title..." value="<?php echo htmlspecialchars($search); ?>">
                     <button type="submit" class="btn btn-primary fw-semibold">Search</button>
                 </div>
             </div>
@@ -132,7 +132,7 @@ $pass_rate = $total_attempts > 0 ? round(($passed_count / $total_attempts) * 100
                     <tr>
                         <th class="ps-4">#</th>
                         <th>Student</th>
-                        <th>Email / Student ID</th>
+                        <th>Student ID</th>
                         <th>Exam Title</th>
                         <th>Score</th>
                         <th>Status</th>
@@ -150,7 +150,7 @@ $pass_rate = $total_attempts > 0 ? round(($passed_count / $total_attempts) * 100
                         <tr>
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
                             <td><strong class="text-dark"><?php echo htmlspecialchars($r['student_name']); ?></strong></td>
-                            <td><code class="text-muted"><?php echo htmlspecialchars($r['email']); ?></code></td>
+                            <td><span class="badge bg-light text-dark border font-monospace"><i class="bi bi-person-badge me-1 text-primary"></i><?php echo htmlspecialchars($r['email']); ?></span></td>
                             <td><?php echo htmlspecialchars($r['exam_title']); ?></td>
                             <td>
                                 <span class="fw-bold fs-6 <?php echo $passed ? 'text-success' : 'text-danger'; ?>">

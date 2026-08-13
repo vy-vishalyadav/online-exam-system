@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
 
         if (empty($email) || empty($password)) {
-            $error = "Please enter both Email/Student ID and Password.";
+            $error = "Please enter both Student ID and Password.";
         } else {
             $query = "SELECT * FROM students WHERE email='$email' AND password='$password' LIMIT 1";
             $result = mysqli_query($conn, $query);
@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: student/dashboard.php");
                 exit;
             } else {
-                $error = "Invalid Student Email / ID or password.";
+                $error = "Invalid Student ID or password.";
             }
         }
     } elseif ($role === 'admin') {
@@ -155,10 +155,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <form method="POST" action="">
                         <input type="hidden" name="role" value="student">
                         <div class="mb-3">
-                            <label class="form-label fw-semibold text-secondary">Student ID / Email</label>
+                            <label class="form-label fw-semibold text-secondary">Student ID</label>
                             <div class="input-group">
-                                <span class="input-group-text bg-light"><i class="bi bi-envelope text-muted"></i></span>
-                                <input type="email" name="email" class="form-control" placeholder="e.g. student@example.com" required>
+                                <span class="input-group-text bg-light"><i class="bi bi-person-badge text-muted"></i></span>
+                                <input type="text" name="email" class="form-control" placeholder="e.g. 96579" required>
                             </div>
                         </div>
                         <div class="mb-4">
@@ -210,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="col-6">
                             <span class="text-muted">Student:</span><br>
-                            <code>student@example.com</code> / <code>student123</code>
+                            <code>96579</code> / <code>student123</code>
                         </div>
                     </div>
                 </div>
