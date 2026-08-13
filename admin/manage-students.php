@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
 
     // Default password if empty
     if (empty($password)) {
-        $password = "student123";
+        $password = "student";
     }
 
     if (empty($name)) {
@@ -257,12 +257,12 @@ $students_result = mysqli_query($conn, $students_query);
                         <label class="form-label fw-semibold">Password (Optional)</label>
                         <div class="input-group">
                             <span class="input-group-text"><i class="bi bi-key"></i></span>
-                            <input type="text" name="password" class="form-control" placeholder="Default: student123">
+                            <input type="text" name="password" class="form-control" placeholder="Default: student">
                         </div>
                     </div>
 
                     <div class="alert alert-info py-2 small mb-0">
-                        <i class="bi bi-info-circle-fill me-1"></i> If Student ID or password is left blank, an ID will be auto-generated in format <code>numericid@rclasses.com</code> with default password <code>student123</code>.
+                        <i class="bi bi-info-circle-fill me-1"></i> If Student ID or password is left blank, an ID will be auto-generated in format <code>numericid@rclasses.com</code> with default password <code>student</code>.
                     </div>
                 </div>
                 <div class="modal-footer bg-light">

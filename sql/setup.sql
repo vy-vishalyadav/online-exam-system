@@ -57,9 +57,9 @@ CREATE TABLE IF NOT EXISTS results (
 
 -- Insert sample students if not exists
 INSERT INTO students (id, name, email, password) VALUES
-(1, 'John Doe', 'john@example.com', 'student123'),
-(2, 'Jane Smith', 'jane@example.com', 'student123'),
-(3, 'Demo Student', 'student@example.com', 'student123')
+(1, 'John Doe', 'john@example.com', 'student'),
+(2, 'Jane Smith', 'jane@example.com', 'student'),
+(3, 'Demo Student', 'student@example.com', 'student')
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
 -- Insert sample exams if not exists

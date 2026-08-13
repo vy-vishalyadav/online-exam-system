@@ -210,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="col-6">
                             <span class="text-muted">Student:</span><br>
-                            <code>96579@rclasses.com</code> / <code>student123</code>
+                            <code>96579@rclasses.com</code> / <code>student</code>
                         </div>
                     </div>
                 </div>

@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($password)) {
-        $password = "student123";
+        $password = "student";
     }
 
     if (empty($name)) {
@@ -96,12 +96,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label class="form-label fw-semibold">Password (Optional)</label>
                 <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-key"></i></span>
-                    <input type="text" name="password" class="form-control" placeholder="Default: student123">
+                    <input type="text" name="password" class="form-control" placeholder="Default: student">
                 </div>
             </div>
 
             <div class="alert alert-info border-0 bg-info-subtle">
-                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Student ID or Password is left empty, system auto-generates in format <code>numericid@rclasses.com</code>. Default password is <code>student123</code>.
+                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Student ID or Password is left empty, system auto-generates in format <code>numericid@rclasses.com</code>. Default password is <code>student</code>.
             </div>
 
             <div class="d-flex gap-2 mt-4">
