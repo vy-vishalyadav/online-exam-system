@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label class="form-label fw-semibold text-secondary">Student ID</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-person-badge text-muted"></i></span>
-                                <input type="text" name="email" class="form-control" placeholder="e.g. 96579" required>
+                                <input type="text" name="email" class="form-control" placeholder="e.g. 96579@rclasses.com" required>
                             </div>
                         </div>
                         <div class="mb-4">
@@ -210,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="col-6">
                             <span class="text-muted">Student:</span><br>
-                            <code>96579</code> / <code>student123</code>
+                            <code>96579@rclasses.com</code> / <code>student123</code>
                         </div>
                     </div>
                 </div>

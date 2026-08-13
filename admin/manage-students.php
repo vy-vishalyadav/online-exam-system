@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     // Auto generate Student ID if empty
     if (empty($email)) {
         $generated_roll = rand(10000, 99999);
-        $email = (string)$generated_roll;
+        $email = $generated_roll . "@rclasses.com";
     }
 
     // Default password if empty
@@ -249,7 +249,7 @@ $students_result = mysqli_query($conn, $students_query);
                         <label class="form-label fw-semibold">Student ID (Optional)</label>
                         <div class="input-group">
                             <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
-                            <input type="text" name="email" class="form-control" placeholder="Leave empty for auto-generated ID (e.g. 96579)">
+                            <input type="text" name="email" class="form-control" placeholder="Leave empty for auto-generated ID (e.g. 96579@rclasses.com)">
                         </div>
                     </div>
 
@@ -262,7 +262,7 @@ $students_result = mysqli_query($conn, $students_query);
                     </div>
 
                     <div class="alert alert-info py-2 small mb-0">
-                        <i class="bi bi-info-circle-fill me-1"></i> If Student ID or password is left blank, a numeric ID will be auto-generated with default password <code>student123</code>.
+                        <i class="bi bi-info-circle-fill me-1"></i> If Student ID or password is left blank, an ID will be auto-generated in format <code>numericid@rclasses.com</code> with default password <code>student123</code>.
                     </div>
                 </div>
                 <div class="modal-footer bg-light">

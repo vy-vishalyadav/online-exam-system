@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($email)) {
         $generated_roll = rand(10000, 99999);
-        $email = (string)$generated_roll;
+        $email = $generated_roll . "@rclasses.com";
     }
 
     if (empty($password)) {
@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label class="form-label fw-semibold">Student ID (Optional)</label>
                 <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
-                    <input type="text" name="email" class="form-control" placeholder="Leave empty for auto-generated numeric ID (e.g. 96579)">
+                    <input type="text" name="email" class="form-control" placeholder="Leave empty for auto-generated ID (e.g. 96579@rclasses.com)">
                 </div>
             </div>
 
@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="alert alert-info border-0 bg-info-subtle">
-                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Student ID or Password is left empty, system auto-generates a numeric ID. Default password is <code>student123</code>.
+                <i class="bi bi-info-circle-fill me-2 text-info"></i> <strong>Note:</strong> If Student ID or Password is left empty, system auto-generates in format <code>numericid@rclasses.com</code>. Default password is <code>student123</code>.
             </div>
 
             <div class="d-flex gap-2 mt-4">
