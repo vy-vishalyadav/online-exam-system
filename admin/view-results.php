@@ -56,7 +56,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if (!empty($_POST['marks']) && is_array($_POST['marks'])) {
             foreach ($_POST['marks'] as $ans_id => $marks_val) {
                 $ans_id = (int)$ans_id;
-                $m = min(1.0, max(0.0, (float)$marks_val));
+
+                // Fetch the max marks for this answer's question
+                $stmt_max = mysqli_prepare($conn, "SELECT q.marks FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.id = ? AND sa.result_id = ? LIMIT 1");
+                $q_max_marks = 1; // fallback
+                if ($stmt_max) {
+                    mysqli_stmt_bind_param($stmt_max, "ii", $ans_id, $result_id);
+                    mysqli_stmt_execute($stmt_max);
+                    $res_max = mysqli_stmt_get_result($stmt_max);
+                    if ($row_max = mysqli_fetch_assoc($res_max)) {
+                        $q_max_marks = max(0.5, (float)($row_max['marks'] ?? 1));
+                    }
+                    mysqli_stmt_close($stmt_max);
+                }
+
+                $m    = min($q_max_marks, max(0.0, (float)$marks_val));
                 $is_c = ($m > 0) ? 1 : 0;
                 $stmt = mysqli_prepare($conn, "UPDATE student_answers SET marks_awarded = ?, is_correct = ? WHERE id = ? AND result_id = ?");
                 if ($stmt) {

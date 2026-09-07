@@ -67,6 +67,12 @@ function run_auto_migrations($conn) {
 
     // 5. Add unique index on students.email if not already present (prevents duplicate IDs)
     @mysqli_query($conn, "ALTER TABLE students ADD UNIQUE INDEX IF NOT EXISTS idx_students_email (email)");
+
+    // 6. questions.marks column (stores max marks per question; default 1 for MCQ, 5 for descriptive)
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM questions LIKE 'marks'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE questions ADD COLUMN marks DECIMAL(5,2) NOT NULL DEFAULT 1 AFTER question_type");
+    }
 }
 
 run_auto_migrations($conn);
