@@ -7,17 +7,20 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$q_students = mysqli_query($conn, "SELECT COUNT(*) AS c FROM students");
+$q_students  = mysqli_query($conn, "SELECT COUNT(*) AS c FROM students");
 $total_students = ($q_students ? mysqli_fetch_assoc($q_students)['c'] : 0);
 
-$q_exams = mysqli_query($conn, "SELECT COUNT(*) AS c FROM exams");
+$q_exams     = mysqli_query($conn, "SELECT COUNT(*) AS c FROM exams");
 $total_exams = ($q_exams ? mysqli_fetch_assoc($q_exams)['c'] : 0);
 
 $q_questions = mysqli_query($conn, "SELECT COUNT(*) AS c FROM questions");
 $total_questions = ($q_questions ? mysqli_fetch_assoc($q_questions)['c'] : 0);
 
-$q_results = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results");
+$q_results   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results");
 $total_results = ($q_results ? mysqli_fetch_assoc($q_results)['c'] : 0);
+
+$q_pending   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results WHERE status = 'pending'");
+$pending_count = ($q_pending ? mysqli_fetch_assoc($q_pending)['c'] : 0);
 
 // Fetch latest 5 results for recent overview
 $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.title AS exam_title
@@ -27,23 +30,29 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
                                       ORDER BY r.attempted_at DESC LIMIT 5");
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h3 class="fw-bold text-dark mb-1">Admin Dashboard</h3>
-        <p class="text-muted mb-0">Overview of students, exams, questions, and attempt analytics.</p>
-    </div>
-    <div>
-        <a href="manage-exam.php" class="btn btn-primary shadow-sm fw-bold">
-            <i class="bi bi-plus-circle me-1"></i> Manage Exams
-        </a>
-    </div>
+<div class="mb-4">
+    <h3 class="fw-bold text-dark mb-1">Admin Dashboard</h3>
+    <p class="text-muted mb-0">Overview of students, exams, questions, and attempt analytics.</p>
 </div>
 
-<!-- Stat Cards with Guaranteed High Contrast -->
-<div class="row g-3 mb-4">
+<?php if ($pending_count > 0): ?>
+    <a href="view-results.php?status=pending" class="text-decoration-none">
+        <div class="alert alert-warning d-flex align-items-center gap-2 mb-4 rounded-3 shadow-sm border-0" role="alert">
+            <i class="bi bi-hourglass-split fs-5 text-warning"></i>
+            <div>
+                <strong><?php echo $pending_count; ?> result<?php echo $pending_count > 1 ? 's' : ''; ?> waiting for your review.</strong>
+                <span class="text-muted ms-1">Click to review and publish.</span>
+            </div>
+            <i class="bi bi-arrow-right ms-auto text-warning"></i>
+        </div>
+    </a>
+<?php endif; ?>
+
+<!-- Stat Cards -->
+<div class="row g-3 mb-5">
     <div class="col-md-6 col-xl-3">
         <a href="manage-students.php" class="text-decoration-none">
-            <div class="stat-card stat-card-blue bg-gradient-blue" style="background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%) !important; color: #ffffff !important;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%); color:#fff;">
                 <h6 class="mb-1 fw-bold text-white opacity-75">Total Students</h6>
                 <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_students; ?></h2>
                 <i class="bi bi-people-fill stat-icon text-white"></i>
@@ -52,7 +61,7 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
     </div>
     <div class="col-md-6 col-xl-3">
         <a href="manage-exam.php" class="text-decoration-none">
-            <div class="stat-card stat-card-green bg-gradient-green" style="background: linear-gradient(135deg, #059669 0%, #047857 100%) !important; color: #ffffff !important;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #059669 0%, #047857 100%); color:#fff;">
                 <h6 class="mb-1 fw-bold text-white opacity-75">Total Exams</h6>
                 <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_exams; ?></h2>
                 <i class="bi bi-journal-bookmark-fill stat-icon text-white"></i>
@@ -61,7 +70,7 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
     </div>
     <div class="col-md-6 col-xl-3">
         <a href="manage-questions.php" class="text-decoration-none">
-            <div class="stat-card stat-card-purple" style="background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%) !important; color: #ffffff !important;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); color:#fff;">
                 <h6 class="mb-1 fw-bold text-white opacity-75">Total Questions</h6>
                 <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_questions; ?></h2>
                 <i class="bi bi-patch-question-fill stat-icon text-white"></i>
@@ -70,55 +79,10 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
     </div>
     <div class="col-md-6 col-xl-3">
         <a href="view-results.php" class="text-decoration-none">
-            <div class="stat-card stat-card-orange bg-gradient-orange" style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important; color: #ffffff !important;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color:#fff;">
                 <h6 class="mb-1 fw-bold text-white opacity-75">Total Attempts</h6>
                 <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_results; ?></h2>
                 <i class="bi bi-bar-chart-fill stat-icon text-white"></i>
-            </div>
-        </a>
-    </div>
-</div>
-
-<!-- Quick Actions -->
-<h5 class="fw-bold mb-3 text-dark"><i class="bi bi-lightning-charge text-warning me-1"></i> Quick Actions</h5>
-<div class="row g-3 mb-5">
-    <div class="col-md-3 col-sm-6">
-        <a href="manage-exam.php?action=new" class="text-decoration-none">
-            <div class="hover-card p-3 text-center">
-                <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-inline-flex align-items-center justify-content-center p-3 mb-2" style="width: 54px; height: 54px;">
-                    <i class="bi bi-plus-square-fill fs-4"></i>
-                </div>
-                <h6 class="fw-bold text-dark mb-0">Create Exam</h6>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-3 col-sm-6">
-        <a href="add-question.php" class="text-decoration-none">
-            <div class="hover-card p-3 text-center">
-                <div class="rounded-circle bg-success bg-opacity-10 text-success d-inline-flex align-items-center justify-content-center p-3 mb-2" style="width: 54px; height: 54px;">
-                    <i class="bi bi-question-circle-fill fs-4"></i>
-                </div>
-                <h6 class="fw-bold text-dark mb-0">Add Question</h6>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-3 col-sm-6">
-        <a href="manage-students.php" class="text-decoration-none">
-            <div class="hover-card p-3 text-center">
-                <div class="rounded-circle bg-info bg-opacity-10 text-info d-inline-flex align-items-center justify-content-center p-3 mb-2" style="width: 54px; height: 54px;">
-                    <i class="bi bi-person-plus-fill fs-4"></i>
-                </div>
-                <h6 class="fw-bold text-dark mb-0">Add Student</h6>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-3 col-sm-6">
-        <a href="view-results.php" class="text-decoration-none">
-            <div class="hover-card p-3 text-center">
-                <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-inline-flex align-items-center justify-content-center p-3 mb-2" style="width: 54px; height: 54px;">
-                    <i class="bi bi-clipboard-data-fill fs-4"></i>
-                </div>
-                <h6 class="fw-bold text-dark mb-0">View Reports</h6>
             </div>
         </a>
     </div>
@@ -145,14 +109,25 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
                 <tbody>
                     <?php if ($recent_results && mysqli_num_rows($recent_results) > 0): ?>
                         <?php while ($r = mysqli_fetch_assoc($recent_results)): 
+                            $is_pending = (($r['status'] ?? 'published') === 'pending');
                             $passed = $r['score'] >= 50;
                         ?>
                             <tr>
                                 <td class="ps-4 fw-semibold text-dark"><?php echo htmlspecialchars($r['student_name']); ?></td>
                                 <td class="text-dark"><?php echo htmlspecialchars($r['exam_title']); ?></td>
-                                <td><span class="fw-bold text-dark"><?php echo $r['score']; ?>%</span></td>
                                 <td>
-                                    <?php if ($passed): ?>
+                                    <?php if ($is_pending): ?>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Draft (<?php echo $r['score']; ?>%)</span>
+                                    <?php else: ?>
+                                        <span class="fw-bold text-dark"><?php echo $r['score']; ?>%</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($is_pending): ?>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3 py-1 fw-bold">
+                                            <i class="bi bi-hourglass-split me-1"></i> Pending Review
+                                        </span>
+                                    <?php elseif ($passed): ?>
                                         <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">Passed</span>
                                     <?php else: ?>
                                         <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-1 fw-bold">Failed</span>

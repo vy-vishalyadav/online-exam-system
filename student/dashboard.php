@@ -13,22 +13,16 @@ $student_id = (int)$_SESSION['student_id'];
 $query = "SELECT e.*, 
             (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
             (SELECT score FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
+            (SELECT status FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
             (SELECT COUNT(*) FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id) AS attempt_count
           FROM exams e 
           ORDER BY e.id DESC";
 $exams = mysqli_query($conn, $query);
 ?>
 
-<div class="row align-items-center mb-4 g-3">
-    <div class="col">
-        <h3 class="fw-extrabold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_name']); ?>! 👋</h3>
-        <p class="text-muted mb-0">Select an exam below to begin. Read each question carefully. Good luck!</p>
-    </div>
-    <div class="col-auto">
-        <a href="result.php" class="btn btn-outline-primary fw-bold shadow-sm rounded-pill px-3">
-            <i class="bi bi-trophy me-1"></i> View My Results
-        </a>
-    </div>
+<div class="mb-4">
+    <h3 class="fw-extrabold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_name']); ?>! 👋</h3>
+    <p class="text-muted mb-0">Select an exam below to begin. Read each question carefully. Good luck!</p>
 </div>
 
 <h5 class="fw-bold mb-3"><i class="bi bi-journal-text text-primary me-1"></i> Available Exams</h5>
@@ -39,8 +33,10 @@ $exams = mysqli_query($conn, $query);
             $q_count = (int)$exam['q_count'];
             $attempt_count = (int)$exam['attempt_count'];
             $last_score = $exam['last_score'];
+            $last_status = $exam['last_status'] ?? 'published';
             $has_attempted = $attempt_count > 0;
-            $passed = $has_attempted && $last_score >= 50;
+            $is_pending = ($has_attempted && $last_status === 'pending');
+            $passed = ($has_attempted && !$is_pending && $last_score >= 50);
         ?>
             <div class="col-md-6 col-lg-4">
                 <div class="hover-card h-100 p-4 d-flex flex-column justify-content-between">
@@ -58,24 +54,36 @@ $exams = mysqli_query($conn, $query);
                         
                         <?php if ($has_attempted): ?>
                             <div class="bg-light p-3 rounded-3 mb-3 border">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <small class="text-muted fw-semibold">Last Score:</small>
-                                    <span class="fw-bold <?php echo $passed ? 'text-success' : 'text-danger'; ?>">
-                                        <?php echo $last_score; ?>%
-                                    </span>
-                                </div>
-                                <div class="mt-1">
-                                    <?php if ($passed): ?>
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0.5 small">
-                                            <i class="bi bi-check-circle me-1"></i> Passed
+                                <?php if ($is_pending): ?>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-muted fw-semibold">Status:</small>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2 py-1 fw-bold">
+                                            <i class="bi bi-hourglass-split me-1"></i> Result Under Review
                                         </span>
-                                    <?php else: ?>
-                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 small">
-                                            <i class="bi bi-x-circle me-1"></i> Failed
+                                    </div>
+                                    <div class="mt-2 text-muted small">
+                                        Your submission is being evaluated by your instructor.
+                                    </div>
+                                <?php else: ?>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-muted fw-semibold">Last Score:</small>
+                                        <span class="fw-bold <?php echo $passed ? 'text-success' : 'text-danger'; ?>">
+                                            <?php echo $last_score; ?>%
                                         </span>
-                                    <?php endif; ?>
-                                    <span class="text-muted small ms-1">(<?php echo $attempt_count; ?> attempt<?php echo $attempt_count > 1 ? 's' : ''; ?>)</span>
-                                </div>
+                                    </div>
+                                    <div class="mt-1">
+                                        <?php if ($passed): ?>
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0.5 small">
+                                                <i class="bi bi-check-circle me-1"></i> Passed
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 small">
+                                                <i class="bi bi-x-circle me-1"></i> Failed
+                                            </span>
+                                        <?php endif; ?>
+                                        <span class="text-muted small ms-1">(<?php echo $attempt_count; ?> attempt<?php echo $attempt_count > 1 ? 's' : ''; ?>)</span>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         <?php else: ?>
                             <p class="text-muted small mb-3">

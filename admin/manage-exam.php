@@ -7,60 +7,122 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$error = "";
+// CSRF token generation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$error   = "";
 $success = "";
 
-// Handle Delete Exam
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $delete_id = (int)$_GET['id'];
-    if (mysqli_query($conn, "DELETE FROM exams WHERE id = $delete_id")) {
-        $success = "Exam deleted successfully!";
+// ── Handle Delete Exam (POST only, with CSRF) ─────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_exam') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid request. Please try again.";
     } else {
-        $error = "Failed to delete exam: " . mysqli_error($conn);
+        $delete_id = (int)($_POST['id'] ?? 0);
+        if ($delete_id > 0) {
+            $stmt = mysqli_prepare($conn, "DELETE FROM exams WHERE id = ?");
+            mysqli_stmt_bind_param($stmt, "i", $delete_id);
+            if (mysqli_stmt_execute($stmt)) {
+                mysqli_stmt_close($stmt);
+                $_SESSION['flash_success'] = "Exam deleted successfully!";
+            } else {
+                $_SESSION['flash_error'] = "Failed to delete exam: " . mysqli_error($conn);
+                mysqli_stmt_close($stmt);
+            }
+        }
+        header("Location: manage-exam.php");
+        exit;
     }
 }
 
-// Handle Add Exam POST
+// ── Handle Add Exam POST ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
-    $title = trim(mysqli_real_escape_string($conn, $_POST['title'] ?? ''));
-    $duration = (int)($_POST['duration_minutes'] ?? 30);
-
-    if (empty($title)) {
-        $error = "Exam Title is required.";
-    } elseif ($duration < 1) {
-        $error = "Duration must be at least 1 minute.";
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid request. Please try again.";
     } else {
-        $insert_query = "INSERT INTO exams (title, duration_minutes) VALUES ('$title', $duration)";
-        if (mysqli_query($conn, $insert_query)) {
-            $success = "Exam '$title' added successfully!";
+        $title       = trim($_POST['title'] ?? '');
+        $duration    = (int)($_POST['duration_minutes'] ?? 30);
+        $result_mode = ($_POST['result_mode'] ?? 'instant') === 'pending' ? 'pending' : 'instant';
+
+        if (empty($title)) {
+            $error = "Exam Title is required.";
+        } elseif (strlen($title) > 200) {
+            $error = "Exam title is too long (max 200 characters).";
+        } elseif ($duration < 1 || $duration > 600) {
+            $error = "Duration must be between 1 and 600 minutes.";
         } else {
-            $error = "Error adding exam: " . mysqli_error($conn);
+            $stmt = mysqli_prepare($conn, "INSERT INTO exams (title, duration_minutes, result_mode) VALUES (?, ?, ?)");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, "sis", $title, $duration, $result_mode);
+                if (mysqli_stmt_execute($stmt)) {
+                    mysqli_stmt_close($stmt);
+                    $_SESSION['flash_success'] = "Exam '" . htmlspecialchars($title) . "' added successfully!";
+                    header("Location: manage-exam.php");
+                    exit;
+                } else {
+                    $error = "Error adding exam: " . mysqli_error($conn);
+                    mysqli_stmt_close($stmt);
+                }
+            } else {
+                $error = "Database query error. Please try again.";
+            }
         }
     }
 }
 
-// Handle Edit Exam POST
+// ── Handle Edit Exam POST ─────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
-    $exam_id = (int)$_POST['exam_id'];
-    $title = trim(mysqli_real_escape_string($conn, $_POST['title'] ?? ''));
-    $duration = (int)($_POST['duration_minutes'] ?? 30);
-
-    if (empty($title)) {
-        $error = "Exam Title is required.";
-    } elseif ($duration < 1) {
-        $error = "Duration must be at least 1 minute.";
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid request. Please try again.";
     } else {
-        $update_query = "UPDATE exams SET title='$title', duration_minutes=$duration WHERE id=$exam_id";
-        if (mysqli_query($conn, $update_query)) {
-            $success = "Exam updated successfully!";
+        $exam_id     = (int)($_POST['exam_id'] ?? 0);
+        $title       = trim($_POST['title'] ?? '');
+        $duration    = (int)($_POST['duration_minutes'] ?? 30);
+        $result_mode = ($_POST['result_mode'] ?? 'instant') === 'pending' ? 'pending' : 'instant';
+
+        if (empty($title)) {
+            $error = "Exam Title is required.";
+        } elseif (strlen($title) > 200) {
+            $error = "Exam title is too long (max 200 characters).";
+        } elseif ($duration < 1 || $duration > 600) {
+            $error = "Duration must be between 1 and 600 minutes.";
         } else {
-            $error = "Error updating exam: " . mysqli_error($conn);
+            $stmt = mysqli_prepare($conn, "UPDATE exams SET title=?, duration_minutes=?, result_mode=? WHERE id=?");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, "sisi", $title, $duration, $result_mode, $exam_id);
+                if (mysqli_stmt_execute($stmt)) {
+                    mysqli_stmt_close($stmt);
+                    $_SESSION['flash_success'] = "Exam updated successfully!";
+                    header("Location: manage-exam.php");
+                    exit;
+                } else {
+                    $error = "Error updating exam: " . mysqli_error($conn);
+                    mysqli_stmt_close($stmt);
+                }
+            } else {
+                $error = "Database query error. Please try again.";
+            }
         }
     }
 }
 
-// Fetch all exams with question counts
-$exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count FROM exams e ORDER BY e.id DESC");
+// Flash messages
+if (!empty($_SESSION['flash_success'])) {
+    $success = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
+if (!empty($_SESSION['flash_error'])) {
+    $error = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+
+// Fetch all exams with question counts & descriptive question counts
+$exams = mysqli_query($conn, "SELECT e.*, 
+                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
+                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_count
+                              FROM exams e ORDER BY e.id DESC");
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -68,9 +130,9 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
         <h4 class="fw-bold mb-0"><i class="bi bi-journal-text text-primary"></i> Manage Exams</h4>
         <small class="text-muted">Create, edit, delete, and view questions for each exam.</small>
     </div>
-    <div>
-        <a href="dashboard.php" class="btn btn-outline-secondary me-2">
-            <i class="bi bi-arrow-left"></i> Dashboard
+    <div class="d-flex gap-2">
+        <a href="dashboard.php" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Dashboard
         </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addExamModal">
             <i class="bi bi-plus-circle me-1"></i> Add New Exam
@@ -102,6 +164,7 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                         <th>Exam Title</th>
                         <th>Duration</th>
                         <th>Questions</th>
+                        <th>Result Mode</th>
                         <th class="text-center pe-4">Actions</th>
                     </tr>
                 </thead>
@@ -110,6 +173,8 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                     if ($exams && mysqli_num_rows($exams) > 0):
                         $i = 1;
                         while ($e = mysqli_fetch_assoc($exams)):
+                            $has_desc = ((int)($e['desc_count'] ?? 0)) > 0;
+                            $mode = $e['result_mode'] ?? 'instant';
                     ?>
                         <tr>
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
@@ -121,6 +186,26 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                                         <i class="bi bi-patch-question me-1"></i><?php echo $e['q_count']; ?> questions
                                     </span>
                                 </a>
+                                <?php if ($has_desc): ?>
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1 ms-1">
+                                        <i class="bi bi-pencil-square me-1"></i><?php echo $e['desc_count']; ?> descriptive
+                                    </span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($has_desc): ?>
+                                    <span class="badge bg-warning text-dark border rounded-pill px-3 py-1" title="Exams with descriptive answers always require manual evaluation">
+                                        <i class="bi bi-pencil-square me-1"></i> Pending (Descriptive)
+                                    </span>
+                                <?php elseif ($mode === 'pending'): ?>
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3 py-1">
+                                        <i class="bi bi-hourglass-split me-1"></i> Pending Review
+                                    </span>
+                                <?php else: ?>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">
+                                        <i class="bi bi-lightning-charge me-1"></i> Instant Result
+                                    </span>
+                                <?php endif; ?>
                             </td>
                             <td class="text-center pe-4">
                                 <div class="btn-group btn-group-sm">
@@ -130,11 +215,15 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                                     <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editExamModal<?php echo $e['id']; ?>" title="Edit Exam">
                                         <i class="bi bi-pencil"></i> Edit
                                     </button>
-                                    <a href="manage-exam.php?action=delete&id=<?php echo $e['id']; ?>" 
-                                       class="btn btn-outline-danger" 
-                                       onclick="return confirm('Are you sure you want to delete exam &quot;<?php echo htmlspecialchars($e['title']); ?>&quot;? All associated questions and results will be deleted.');" title="Delete Exam">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </a>
+                                    <!-- Delete via POST form (prevents CSRF via simple link) -->
+                                    <form method="POST" action="manage-exam.php" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete exam &quot;<?php echo htmlspecialchars($e['title'], ENT_QUOTES); ?>&quot;? All associated questions and results will be deleted.');">
+                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                        <input type="hidden" name="action" value="delete_exam">
+                                        <input type="hidden" name="id" value="<?php echo $e['id']; ?>">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete Exam">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </form>
                                 </div>
 
                                 <!-- Edit Exam Modal -->
@@ -142,6 +231,7 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                                     <div class="modal-dialog">
                                         <div class="modal-content">
                                             <form method="POST" action="manage-exam.php">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                                                 <div class="modal-header bg-light">
                                                     <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Exam</h5>
                                                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -151,11 +241,21 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                                                     <input type="hidden" name="exam_id" value="<?php echo $e['id']; ?>">
                                                     <div class="mb-3">
                                                         <label class="form-label fw-semibold">Exam Title</label>
-                                                        <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($e['title']); ?>" required>
+                                                        <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($e['title']); ?>" required maxlength="200">
                                                     </div>
                                                     <div class="mb-3">
                                                         <label class="form-label fw-semibold">Duration (minutes)</label>
-                                                        <input type="number" name="duration_minutes" class="form-control" min="1" value="<?php echo (int)$e['duration_minutes']; ?>" required>
+                                                        <input type="number" name="duration_minutes" class="form-control" min="1" max="600" value="<?php echo (int)$e['duration_minutes']; ?>" required>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold">Result Release Mode</label>
+                                                        <select name="result_mode" class="form-select">
+                                                            <option value="instant" <?php echo ($mode === 'instant') ? 'selected' : ''; ?>>Instant Result (Auto-release score on submit)</option>
+                                                            <option value="pending" <?php echo ($mode === 'pending') ? 'selected' : ''; ?>>Pending Review (Hold score for instructor review)</option>
+                                                        </select>
+                                                        <div class="form-text text-muted">
+                                                            <i class="bi bi-info-circle me-1"></i> If this exam has descriptive questions, results will automatically be held for review.
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer bg-light">
@@ -174,7 +274,7 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                     else:
                     ?>
                         <tr>
-                            <td colspan="5" class="text-center text-muted py-4">
+                            <td colspan="6" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i> No exams found. Click "Add New Exam" to create one.
                             </td>
                         </tr>
@@ -190,6 +290,7 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST" action="manage-exam.php">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Add New Exam</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -198,11 +299,21 @@ $exams = mysqli_query($conn, "SELECT e.*, (SELECT COUNT(*) FROM questions q WHER
                     <input type="hidden" name="add_exam" value="1">
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Exam Title</label>
-                        <input type="text" name="title" class="form-control" placeholder="e.g. Science & Technology Quiz" required>
+                        <input type="text" name="title" class="form-control" placeholder="e.g. Science &amp; Technology Quiz" required maxlength="200">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Duration (minutes)</label>
-                        <input type="number" name="duration_minutes" class="form-control" min="1" value="30" required>
+                        <input type="number" name="duration_minutes" class="form-control" min="1" max="600" value="30" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Result Release Mode</label>
+                        <select name="result_mode" class="form-select">
+                            <option value="instant" selected>Instant Result (Auto-release score on submit)</option>
+                            <option value="pending">Pending Review (Hold score for instructor review)</option>
+                        </select>
+                        <div class="form-text text-muted">
+                            <i class="bi bi-info-circle me-1"></i> If descriptive questions are added, results will automatically be set to Pending Review.
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light">

@@ -1,15 +1,82 @@
 <?php
+// Start output buffering to allow safe redirects anytime
+if (!ob_get_level()) {
+    ob_start();
+}
+
+// 1. Secure Session Cookie Configuration
 if (session_status() === PHP_SESSION_NONE) {
+    $secure = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+              (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    
+    session_set_cookie_params([
+        'lifetime' => 0, // Session cookie expires on browser close
+        'path' => '/',
+        'domain' => '',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
     session_start();
 }
 
+// 2. Anti-Cache Headers (Prevent browser from caching sensitive exams/dashboards in history)
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: 0");
+
+// 3. Security Headers
+header("X-Frame-Options: SAMEORIGIN");                         // Prevent clickjacking
+header("X-Content-Type-Options: nosniff");                     // Prevent MIME sniffing
+header("X-XSS-Protection: 1; mode=block");                    // Legacy XSS filter (older browsers)
+header("Referrer-Policy: strict-origin-when-cross-origin");   // Don't leak URLs to 3rd parties
+header("Content-Security-Policy: default-src 'self'; "
+     . "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+     . "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; "
+     . "font-src 'self' fonts.gstatic.com cdn.jsdelivr.net; "
+     . "img-src 'self' data:; "
+     . "connect-src 'self'");
+
 $current_page = basename($_SERVER['PHP_SELF']);
+$is_admin_area = (strpos($_SERVER['PHP_SELF'], '/admin/') !== false);
+$is_student_area = (strpos($_SERVER['PHP_SELF'], '/student/') !== false);
+$login_redirect = ($is_admin_area || $is_student_area) ? '../index.php' : 'index.php';
+
+// 3. Inactivity Timeout (30 minutes of inactivity auto-logout)
+$timeout_seconds = 1800;
+if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout_seconds)) {
+    $_SESSION = array();
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
+    session_unset();
+    session_destroy();
+    header("Location: " . $login_redirect . "?msg=timeout");
+    exit;
+}
+$_SESSION['last_activity'] = time();
+
+// 4. Role-Based Access Control (Access protection before rendering any HTML)
+if ($is_admin_area && !isset($_SESSION['admin_id'])) {
+    header("Location: ../index.php?msg=unauthorized");
+    exit;
+}
+
+if ($is_student_area && !isset($_SESSION['student_id'])) {
+    header("Location: ../index.php?msg=unauthorized");
+    exit;
+}
+
 $is_admin = isset($_SESSION['admin_id']);
 $is_student = isset($_SESSION['student_id']);
 
-$css_path = (strpos($_SERVER['PHP_SELF'], '/student/') !== false || strpos($_SERVER['PHP_SELF'], '/admin/') !== false) ? '../css/style.css' : 'css/style.css';
+$css_path = ($is_student_area || $is_admin_area) ? '../css/style.css' : 'css/style.css';
 $css_ver = file_exists(dirname(__DIR__) . '/css/style.css') ? filemtime(dirname(__DIR__) . '/css/style.css') : time();
-$logout_url = (strpos($_SERVER['PHP_SELF'], '/student/') !== false || strpos($_SERVER['PHP_SELF'], '/admin/') !== false) ? '../logout.php' : 'logout.php';
+$logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -32,7 +99,7 @@ $logout_url = (strpos($_SERVER['PHP_SELF'], '/student/') !== false || strpos($_S
 
 <nav class="navbar navbar-expand-lg navbar-dark navbar-custom sticky-top">
     <div class="container">
-        <a class="navbar-brand d-flex align-items-center gap-2 text-white" href="<?php echo $is_admin ? '../admin/dashboard.php' : ($is_student ? '../student/dashboard.php' : '#'); ?>">
+        <a class="navbar-brand d-flex align-items-center gap-2 text-white" href="<?php echo $is_admin ? 'dashboard.php' : ($is_student ? 'dashboard.php' : '#'); ?>">
             <i class="bi bi-mortarboard-fill text-indigo fs-4" style="color: #818cf8;"></i>
             <span class="fw-bold">Online Exam System</span>
         </a>
@@ -46,39 +113,39 @@ $logout_url = (strpos($_SERVER['PHP_SELF'], '/student/') !== false || strpos($_S
                 <ul class="navbar-nav me-auto ms-lg-4 mb-2 mb-lg-0 gap-1">
                     <?php if ($is_admin): ?>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'dashboard.php') ? 'active' : ''; ?>" href="../admin/dashboard.php">
+                            <a class="nav-link <?php echo ($current_page === 'dashboard.php') ? 'active' : ''; ?>" href="dashboard.php">
                                 <i class="bi bi-speedometer2 me-1"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'manage-exam.php') ? 'active' : ''; ?>" href="../admin/manage-exam.php">
+                            <a class="nav-link <?php echo in_array($current_page, ['manage-exam.php','manage-questions.php','add-question.php']) ? 'active' : ''; ?>" href="manage-exam.php">
                                 <i class="bi bi-journal-text me-1"></i> Exams
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'manage-questions.php' || $current_page === 'add-question.php') ? 'active' : ''; ?>" href="../admin/manage-questions.php">
-                                <i class="bi bi-patch-question me-1"></i> Questions
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'manage-students.php' || $current_page === 'add-student.php') ? 'active' : ''; ?>" href="../admin/manage-students.php">
+                            <a class="nav-link <?php echo in_array($current_page, ['manage-students.php','add-student.php']) ? 'active' : ''; ?>" href="manage-students.php">
                                 <i class="bi bi-people me-1"></i> Students
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'view-results.php') ? 'active' : ''; ?>" href="../admin/view-results.php">
+                            <a class="nav-link <?php echo ($current_page === 'view-results.php') ? 'active' : ''; ?>" href="view-results.php">
                                 <i class="bi bi-bar-chart me-1"></i> Results
                             </a>
                         </li>
                     <?php elseif ($is_student): ?>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'dashboard.php') ? 'active' : ''; ?>" href="../student/dashboard.php">
-                                <i class="bi bi-journal-check me-1"></i> Available Exams
+                            <a class="nav-link <?php echo ($current_page === 'dashboard.php') ? 'active' : ''; ?>" href="dashboard.php">
+                                <i class="bi bi-journal-check me-1"></i> My Exams
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'result.php') ? 'active' : ''; ?>" href="../student/result.php">
+                            <a class="nav-link <?php echo ($current_page === 'result.php') ? 'active' : ''; ?>" href="result.php">
                                 <i class="bi bi-trophy me-1"></i> My Results
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link <?php echo ($current_page === 'change-password.php') ? 'active' : ''; ?>" href="change-password.php">
+                                <i class="bi bi-key me-1"></i> Change Password
                             </a>
                         </li>
                     <?php endif; ?>

@@ -7,50 +7,124 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$error = "";
+// CSRF token generation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$error   = "";
 $success = "";
 
-// Handle Delete Question
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $delete_id = (int)$_GET['id'];
-    $exam_filter = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
-    if (mysqli_query($conn, "DELETE FROM questions WHERE id = $delete_id")) {
-        $success = "Question deleted successfully!";
+// ── Handle Delete Question (POST only, with CSRF) ─────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_question') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid request. Please try again.";
     } else {
-        $error = "Failed to delete question: " . mysqli_error($conn);
+        $delete_id   = (int)($_POST['id'] ?? 0);
+        $exam_filter = (int)($_POST['exam_id'] ?? 0);
+        if ($delete_id > 0) {
+            $stmt = mysqli_prepare($conn, "DELETE FROM questions WHERE id = ?");
+            mysqli_stmt_bind_param($stmt, "i", $delete_id);
+            if (mysqli_stmt_execute($stmt)) {
+                mysqli_stmt_close($stmt);
+                $_SESSION['flash_success'] = "Question deleted successfully!";
+            } else {
+                $_SESSION['flash_error'] = "Failed to delete question: " . mysqli_error($conn);
+                mysqli_stmt_close($stmt);
+            }
+        }
+        $redirect = "manage-questions.php" . ($exam_filter ? "?exam_id=$exam_filter" : "");
+        header("Location: $redirect");
+        exit;
     }
 }
 
-// Handle Edit Question POST
+// ── Handle Edit Question POST ─────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_question'])) {
-    $question_id = (int)$_POST['question_id'];
-    $exam_id = (int)$_POST['exam_id'];
-    $question_text = trim(mysqli_real_escape_string($conn, $_POST['question_text'] ?? ''));
-    $option_a = trim(mysqli_real_escape_string($conn, $_POST['option_a'] ?? ''));
-    $option_b = trim(mysqli_real_escape_string($conn, $_POST['option_b'] ?? ''));
-    $option_c = trim(mysqli_real_escape_string($conn, $_POST['option_c'] ?? ''));
-    $option_d = trim(mysqli_real_escape_string($conn, $_POST['option_d'] ?? ''));
-    $correct_option = strtoupper(trim(mysqli_real_escape_string($conn, $_POST['correct_option'] ?? '')));
-
-    if (empty($question_text) || empty($option_a) || empty($option_b) || empty($option_c) || empty($option_d) || empty($correct_option) || !$exam_id) {
-        $error = "All fields are required.";
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid request. Please try again.";
     } else {
-        $update_query = "UPDATE questions SET 
-                            exam_id = $exam_id,
-                            question_text = '$question_text',
-                            option_a = '$option_a',
-                            option_b = '$option_b',
-                            option_c = '$option_c',
-                            option_d = '$option_d',
-                            correct_option = '$correct_option'
-                         WHERE id = $question_id";
+        $question_id   = (int)($_POST['question_id'] ?? 0);
+        $exam_id       = (int)($_POST['exam_id'] ?? 0);
+        $question_text = trim($_POST['question_text'] ?? '');
+        $question_type = ($_POST['question_type'] ?? 'mcq') === 'descriptive' ? 'descriptive' : 'mcq';
 
-        if (mysqli_query($conn, $update_query)) {
-            $success = "Question updated successfully!";
+        if (empty($question_text) || !$exam_id) {
+            $error = "Exam and Question text are required.";
+        } elseif (strlen($question_text) > 2000) {
+            $error = "Question text is too long (max 2000 characters).";
         } else {
-            $error = "Error updating question: " . mysqli_error($conn);
+            // Verify exam exists
+            $stmt_chk = mysqli_prepare($conn, "SELECT id FROM exams WHERE id = ? LIMIT 1");
+            mysqli_stmt_bind_param($stmt_chk, "i", $exam_id);
+            mysqli_stmt_execute($stmt_chk);
+            mysqli_stmt_store_result($stmt_chk);
+            $exam_exists = mysqli_stmt_num_rows($stmt_chk) > 0;
+            mysqli_stmt_close($stmt_chk);
+
+            if (!$exam_exists) {
+                $error = "Invalid exam selected.";
+            } elseif ($question_type === 'descriptive') {
+                $stmt = mysqli_prepare($conn, "UPDATE questions SET exam_id=?, question_text=? WHERE id=?");
+                if ($stmt) {
+                    mysqli_stmt_bind_param($stmt, "isi", $exam_id, $question_text, $question_id);
+                    if (mysqli_stmt_execute($stmt)) {
+                        mysqli_stmt_close($stmt);
+                        $_SESSION['flash_success'] = "Descriptive question updated successfully!";
+                        $selected_exam_id_redir = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
+                        header("Location: manage-questions.php" . ($selected_exam_id_redir ? "?exam_id=$selected_exam_id_redir" : ""));
+                        exit;
+                    } else {
+                        $error = "Error updating question: " . mysqli_error($conn);
+                        mysqli_stmt_close($stmt);
+                    }
+                } else {
+                    $error = "Database query error.";
+                }
+            } else {
+                $option_a       = trim($_POST['option_a'] ?? '');
+                $option_b       = trim($_POST['option_b'] ?? '');
+                $option_c       = trim($_POST['option_c'] ?? '');
+                $option_d       = trim($_POST['option_d'] ?? '');
+                $correct_option = strtoupper(trim($_POST['correct_option'] ?? ''));
+
+                if (empty($option_a) || empty($option_b) || empty($option_c) || empty($option_d) || empty($correct_option)) {
+                    $error = "All options and correct choice are required for MCQ.";
+                } elseif (!in_array($correct_option, ['A','B','C','D'])) {
+                    $error = "Correct option must be A, B, C, or D.";
+                } elseif (strlen($option_a) > 500 || strlen($option_b) > 500 || strlen($option_c) > 500 || strlen($option_d) > 500) {
+                    $error = "Option text is too long (max 500 characters each).";
+                } else {
+                    $stmt = mysqli_prepare($conn, "UPDATE questions SET exam_id=?, question_text=?, option_a=?, option_b=?, option_c=?, option_d=?, correct_option=? WHERE id=?");
+                    if ($stmt) {
+                        mysqli_stmt_bind_param($stmt, "issssssi", $exam_id, $question_text, $option_a, $option_b, $option_c, $option_d, $correct_option, $question_id);
+                        if (mysqli_stmt_execute($stmt)) {
+                            mysqli_stmt_close($stmt);
+                            $_SESSION['flash_success'] = "Question updated successfully!";
+                            $selected_exam_id_redir = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
+                            header("Location: manage-questions.php" . ($selected_exam_id_redir ? "?exam_id=$selected_exam_id_redir" : ""));
+                            exit;
+                        } else {
+                            $error = "Error updating question: " . mysqli_error($conn);
+                            mysqli_stmt_close($stmt);
+                        }
+                    } else {
+                        $error = "Database query error.";
+                    }
+                }
+            }
         }
     }
+}
+
+// Flash messages
+if (!empty($_SESSION['flash_success'])) {
+    $success = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
+if (!empty($_SESSION['flash_error'])) {
+    $error = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
 }
 
 // Selected Exam Filter
@@ -65,14 +139,19 @@ if ($exams_res) {
     }
 }
 
-// Build Question Query
-$where_sql = $selected_exam_id ? "WHERE q.exam_id = $selected_exam_id" : "";
-$questions_query = "SELECT q.*, e.title AS exam_title 
-                   FROM questions q 
-                   JOIN exams e ON q.exam_id = e.id 
-                   $where_sql 
-                   ORDER BY q.exam_id ASC, q.id ASC";
-$questions_res = mysqli_query($conn, $questions_query);
+// Build Question Query (no user-supplied raw string in WHERE — only cast int)
+if ($selected_exam_id) {
+    $questions_res = mysqli_query($conn, "SELECT q.*, e.title AS exam_title 
+                       FROM questions q 
+                       JOIN exams e ON q.exam_id = e.id 
+                       WHERE q.exam_id = $selected_exam_id
+                       ORDER BY q.exam_id ASC, q.id ASC");
+} else {
+    $questions_res = mysqli_query($conn, "SELECT q.*, e.title AS exam_title 
+                       FROM questions q 
+                       JOIN exams e ON q.exam_id = e.id 
+                       ORDER BY q.exam_id ASC, q.id ASC");
+}
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -140,58 +219,74 @@ $questions_res = mysqli_query($conn, $questions_query);
             <div class="col-12">
                 <div class="card shadow-sm border-0 rounded-4">
                     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                        <div>
-                            <span class="badge bg-primary rounded-pill me-2">Question #<?php echo $count++; ?></span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-primary rounded-pill">Question #<?php echo $count++; ?></span>
                             <span class="badge bg-light text-dark border"><i class="bi bi-journal-bookmark me-1"></i><?php echo htmlspecialchars($q['exam_title']); ?></span>
+                            <?php if (($q['question_type'] ?? 'mcq') === 'descriptive'): ?>
+                                <span class="badge bg-warning text-dark border rounded-pill"><i class="bi bi-pencil-square me-1"></i> Descriptive</span>
+                            <?php else: ?>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill">MCQ</span>
+                            <?php endif; ?>
                         </div>
                         <div class="btn-group btn-group-sm">
                             <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editQuestionModal<?php echo $q['id']; ?>">
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
-                            <a href="manage-questions.php?action=delete&id=<?php echo $q['id']; ?><?php echo $selected_exam_id ? '&exam_id='.$selected_exam_id : ''; ?>" 
-                               class="btn btn-outline-danger"
-                               onclick="return confirm('Are you sure you want to delete this question?');">
-                                <i class="bi bi-trash"></i> Delete
-                            </a>
+                            <!-- Delete via POST form -->
+                            <form method="POST" action="manage-questions.php<?php echo $selected_exam_id ? '?exam_id='.$selected_exam_id : ''; ?>" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this question?');">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                <input type="hidden" name="action" value="delete_question">
+                                <input type="hidden" name="id" value="<?php echo $q['id']; ?>">
+                                <input type="hidden" name="exam_id" value="<?php echo $selected_exam_id; ?>">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </form>
                         </div>
                     </div>
                     <div class="card-body p-4">
                         <h6 class="fw-bold text-dark mb-3"><?php echo htmlspecialchars($q['question_text']); ?></h6>
                         
-                        <div class="row g-2">
-                            <div class="col-md-6">
-                                <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'A') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
-                                    A. <?php echo htmlspecialchars($q['option_a']); ?>
-                                    <?php if ($q['correct_option'] === 'A'): ?>
-                                        <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
-                                    <?php endif; ?>
+                        <?php if (($q['question_type'] ?? 'mcq') === 'descriptive'): ?>
+                            <div class="p-3 bg-light rounded-3 border text-muted">
+                                <i class="bi bi-card-text text-primary me-1"></i> <strong>Open Written Format:</strong> Students will write their detailed explanation in an open text area. Submissions will be held for manual evaluation.
+                            </div>
+                        <?php else: ?>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'A') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
+                                        A. <?php echo htmlspecialchars($q['option_a']); ?>
+                                        <?php if ($q['correct_option'] === 'A'): ?>
+                                            <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'B') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
+                                        B. <?php echo htmlspecialchars($q['option_b']); ?>
+                                        <?php if ($q['correct_option'] === 'B'): ?>
+                                            <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'C') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
+                                        C. <?php echo htmlspecialchars($q['option_c']); ?>
+                                        <?php if ($q['correct_option'] === 'C'): ?>
+                                            <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'D') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
+                                        D. <?php echo htmlspecialchars($q['option_d']); ?>
+                                        <?php if ($q['correct_option'] === 'D'): ?>
+                                            <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="col-md-6">
-                                <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'B') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
-                                    B. <?php echo htmlspecialchars($q['option_b']); ?>
-                                    <?php if ($q['correct_option'] === 'B'): ?>
-                                        <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'C') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
-                                    C. <?php echo htmlspecialchars($q['option_c']); ?>
-                                    <?php if ($q['correct_option'] === 'C'): ?>
-                                        <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="p-2 border rounded-3 <?php echo ($q['correct_option'] === 'D') ? 'bg-success-subtle border-success text-success fw-bold' : 'bg-light'; ?>">
-                                    D. <?php echo htmlspecialchars($q['option_d']); ?>
-                                    <?php if ($q['correct_option'] === 'D'): ?>
-                                        <i class="bi bi-check-circle-fill ms-1"></i> (Correct Answer)
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -201,6 +296,7 @@ $questions_res = mysqli_query($conn, $questions_query);
                 <div class="modal-dialog modal-lg">
                     <div class="modal-content">
                         <form method="POST" action="manage-questions.php<?php echo $selected_exam_id ? '?exam_id='.$selected_exam_id : ''; ?>">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                             <div class="modal-header bg-light">
                                 <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Question</h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -208,6 +304,7 @@ $questions_res = mysqli_query($conn, $questions_query);
                             <div class="modal-body p-4">
                                 <input type="hidden" name="edit_question" value="1">
                                 <input type="hidden" name="question_id" value="<?php echo $q['id']; ?>">
+                                <input type="hidden" name="question_type" value="<?php echo $q['question_type'] ?? 'mcq'; ?>">
 
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Target Exam</label>
@@ -222,37 +319,43 @@ $questions_res = mysqli_query($conn, $questions_query);
 
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Question Text</label>
-                                    <textarea name="question_text" class="form-control" rows="3" required><?php echo htmlspecialchars($q['question_text']); ?></textarea>
+                                    <textarea name="question_text" class="form-control" rows="3" required maxlength="2000"><?php echo htmlspecialchars($q['question_text']); ?></textarea>
                                 </div>
 
-                                <div class="row g-3 mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-semibold">Option A</label>
-                                        <input type="text" name="option_a" class="form-control" value="<?php echo htmlspecialchars($q['option_a']); ?>" required>
+                                <?php if (($q['question_type'] ?? 'mcq') === 'descriptive'): ?>
+                                    <div class="alert alert-info border-0 bg-info-subtle">
+                                        <i class="bi bi-info-circle me-1"></i> This is a descriptive question. Options and correct answer are not required.
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-semibold">Option B</label>
-                                        <input type="text" name="option_b" class="form-control" value="<?php echo htmlspecialchars($q['option_b']); ?>" required>
+                                <?php else: ?>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold">Option A</label>
+                                            <input type="text" name="option_a" class="form-control" value="<?php echo htmlspecialchars($q['option_a']); ?>" required maxlength="500">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold">Option B</label>
+                                            <input type="text" name="option_b" class="form-control" value="<?php echo htmlspecialchars($q['option_b']); ?>" required maxlength="500">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold">Option C</label>
+                                            <input type="text" name="option_c" class="form-control" value="<?php echo htmlspecialchars($q['option_c']); ?>" required maxlength="500">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-semibold">Option D</label>
+                                            <input type="text" name="option_d" class="form-control" value="<?php echo htmlspecialchars($q['option_d']); ?>" required maxlength="500">
+                                        </div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-semibold">Option C</label>
-                                        <input type="text" name="option_c" class="form-control" value="<?php echo htmlspecialchars($q['option_c']); ?>" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-semibold">Option D</label>
-                                        <input type="text" name="option_d" class="form-control" value="<?php echo htmlspecialchars($q['option_d']); ?>" required>
-                                    </div>
-                                </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold text-primary">Correct Option</label>
-                                    <select name="correct_option" class="form-select" required>
-                                        <option value="A" <?php echo ($q['correct_option'] === 'A') ? 'selected' : ''; ?>>Option A</option>
-                                        <option value="B" <?php echo ($q['correct_option'] === 'B') ? 'selected' : ''; ?>>Option B</option>
-                                        <option value="C" <?php echo ($q['correct_option'] === 'C') ? 'selected' : ''; ?>>Option C</option>
-                                        <option value="D" <?php echo ($q['correct_option'] === 'D') ? 'selected' : ''; ?>>Option D</option>
-                                    </select>
-                                </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-primary">Correct Option</label>
+                                        <select name="correct_option" class="form-select" required>
+                                            <option value="A" <?php echo ($q['correct_option'] === 'A') ? 'selected' : ''; ?>>Option A</option>
+                                            <option value="B" <?php echo ($q['correct_option'] === 'B') ? 'selected' : ''; ?>>Option B</option>
+                                            <option value="C" <?php echo ($q['correct_option'] === 'C') ? 'selected' : ''; ?>>Option C</option>
+                                            <option value="D" <?php echo ($q['correct_option'] === 'D') ? 'selected' : ''; ?>>Option D</option>
+                                        </select>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                             <div class="modal-footer bg-light">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

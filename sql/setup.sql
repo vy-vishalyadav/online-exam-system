@@ -28,18 +28,20 @@ WHERE NOT EXISTS (SELECT * FROM admin WHERE username = 'admin');
 CREATE TABLE IF NOT EXISTS exams (
     id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(150) NOT NULL,
-    duration_minutes INT NOT NULL DEFAULT 30
+    duration_minutes INT NOT NULL DEFAULT 30,
+    result_mode VARCHAR(20) NOT NULL DEFAULT 'instant'
 );
 
 -- Questions table
 CREATE TABLE IF NOT EXISTS questions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     question_text TEXT NOT NULL,
-    option_a VARCHAR(255) NOT NULL,
-    option_b VARCHAR(255) NOT NULL,
-    option_c VARCHAR(255) NOT NULL,
-    option_d VARCHAR(255) NOT NULL,
-    correct_option CHAR(1) NOT NULL,
+    question_type VARCHAR(20) NOT NULL DEFAULT 'mcq',
+    option_a VARCHAR(255) NULL,
+    option_b VARCHAR(255) NULL,
+    option_c VARCHAR(255) NULL,
+    option_d VARCHAR(255) NULL,
+    correct_option CHAR(1) NULL,
     exam_id INT NOT NULL,
     FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
 );
@@ -50,16 +52,35 @@ CREATE TABLE IF NOT EXISTS results (
     student_id INT NOT NULL,
     exam_id INT NOT NULL,
     score INT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'published',
+    admin_feedback TEXT NULL,
     attempted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    evaluated_at DATETIME NULL,
     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
     FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
 );
 
+-- Student Answers table (for recording student MCQ and descriptive responses)
+CREATE TABLE IF NOT EXISTS student_answers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    result_id INT NOT NULL,
+    student_id INT NOT NULL,
+    exam_id INT NOT NULL,
+    question_id INT NOT NULL,
+    user_answer TEXT NULL,
+    is_correct TINYINT(1) DEFAULT NULL,
+    marks_awarded DECIMAL(5,2) DEFAULT NULL,
+    FOREIGN KEY (result_id) REFERENCES results(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
+    FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+);
+
 -- Insert sample students if not exists
 INSERT INTO students (id, name, email, password) VALUES
-(1, 'John Doe', 'john@example.com', 'student'),
-(2, 'Jane Smith', 'jane@example.com', 'student'),
-(3, 'Demo Student', 'student@example.com', 'student')
+(1, 'John Doe', '1001@rclasses.com', 'student'),
+(2, 'Jane Smith', '1002@rclasses.com', 'student'),
+(3, 'Demo Student', '1003@rclasses.com', 'student')
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
 -- Insert sample exams if not exists

@@ -1,5 +1,42 @@
 <?php
-session_start();
+// Start output buffering to allow safe redirects anytime
+if (!ob_get_level()) {
+    ob_start();
+}
+
+// 1. Secure Session Cookie Configuration
+if (session_status() === PHP_SESSION_NONE) {
+    $secure = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+              (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    
+    session_set_cookie_params([
+        'lifetime' => 0, // Session cookie expires on browser close
+        'path' => '/',
+        'domain' => '',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+    session_start();
+}
+
+// 2. Anti-Cache Headers (Prevent browser from caching login/session state in history)
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: 0");
+
+// 3. Security Headers
+header("X-Frame-Options: SAMEORIGIN");
+header("X-Content-Type-Options: nosniff");
+header("X-XSS-Protection: 1; mode=block");
+header("Referrer-Policy: strict-origin-when-cross-origin");
+header("Content-Security-Policy: default-src 'self'; "
+     . "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+     . "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; "
+     . "font-src 'self' fonts.gstatic.com cdn.jsdelivr.net; "
+     . "img-src 'self' data:; "
+     . "connect-src 'self'");
+
 include 'config/db.php';
 
 // FIRST: Handle logout action if requested via GET action=logout
@@ -30,53 +67,127 @@ if (isset($_SESSION['admin_id'])) {
 $error = "";
 $success_msg = "";
 
-if (isset($_GET['msg']) && $_GET['msg'] === 'logged_out') {
-    $success_msg = "You have been logged out successfully.";
+if (isset($_GET['msg'])) {
+    if ($_GET['msg'] === 'logged_out') {
+        $success_msg = "You have been logged out successfully.";
+    } elseif ($_GET['msg'] === 'timeout') {
+        $error = "Your session expired due to inactivity (30 mins). Please log in again.";
+    } elseif ($_GET['msg'] === 'unauthorized') {
+        $error = "Access denied. Please log in with an authorized account.";
+    }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// ---------- Brute-force / rate-limit protection ----------
+// Tracks failed attempts per IP in session. 5 failures = 15-min lockout.
+define('MAX_LOGIN_ATTEMPTS', 5);
+define('LOCKOUT_SECONDS',    900); // 15 minutes
+
+$client_ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$client_ip = trim(explode(',', $client_ip)[0]); // Use first IP if behind proxy
+
+$lockout_key   = 'login_attempts_' . md5($client_ip);
+$lockout_ts_key = 'login_lockout_until_' . md5($client_ip);
+
+$is_locked_out = false;
+if (!empty($_SESSION[$lockout_ts_key]) && time() < $_SESSION[$lockout_ts_key]) {
+    $is_locked_out = true;
+    $remaining     = ceil(($_SESSION[$lockout_ts_key] - time()) / 60);
+    $error = "Too many failed login attempts. Please wait {$remaining} minute(s) before trying again.";
+} elseif (!empty($_SESSION[$lockout_ts_key]) && time() >= $_SESSION[$lockout_ts_key]) {
+    // Lockout expired — reset counters
+    unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
+
+    // Clear any URL-based status message — it's a new login attempt, not a redirect notification
+    $success_msg = "";
+    $error = "";
     $role = $_POST['role'] ?? '';
 
     if ($role === 'student') {
-        $email = trim(mysqli_real_escape_string($conn, $_POST['email'] ?? ''));
-        $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
+        $email    = trim($_POST['email']    ?? '');
+        $password = trim($_POST['password'] ?? '');
 
         if (empty($email) || empty($password)) {
             $error = "Please enter both Student ID and Password.";
         } else {
-            $query = "SELECT * FROM students WHERE email='$email' AND password='$password' LIMIT 1";
-            $result = mysqli_query($conn, $query);
+            $stmt = mysqli_prepare($conn, "SELECT id, name, email, password FROM students WHERE email = ? LIMIT 1");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, "s", $email);
+                mysqli_stmt_execute($stmt);
+                $result = mysqli_stmt_get_result($stmt);
 
-            if ($result && mysqli_num_rows($result) === 1) {
-                $row = mysqli_fetch_assoc($result);
-                $_SESSION['student_id'] = $row['id'];
-                $_SESSION['student_name'] = $row['name'];
-                $_SESSION['student_email'] = $row['email'];
-                header("Location: student/dashboard.php");
-                exit;
+                if ($result && $row = mysqli_fetch_assoc($result)) {
+                    if (password_verify($password, $row['password']) || $password === $row['password']) {
+                        // SUCCESS — reset lockout counter
+                        unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
+                        session_regenerate_id(true);
+                        $_SESSION['student_id']    = (int)$row['id'];
+                        $_SESSION['student_name']  = $row['name'];
+                        $_SESSION['student_email'] = $row['email'];
+                        $_SESSION['last_activity'] = time();
+                        header("Location: student/dashboard.php");
+                        exit;
+                    } else {
+                        $error = "Invalid Student ID or password.";
+                    }
+                } else {
+                    $error = "Invalid Student ID or password.";
+                }
+                mysqli_stmt_close($stmt);
             } else {
-                $error = "Invalid Student ID or password.";
+                $error = "Database query error. Please try again.";
             }
         }
     } elseif ($role === 'admin') {
-        $username = trim(mysqli_real_escape_string($conn, $_POST['username'] ?? ''));
-        $password = trim(mysqli_real_escape_string($conn, $_POST['password'] ?? ''));
+        $username = trim($_POST['username'] ?? '');
+        $password = trim($_POST['password'] ?? '');
 
         if (empty($username) || empty($password)) {
             $error = "Please enter both Username and Password.";
         } else {
-            $query = "SELECT * FROM admin WHERE username='$username' AND password='$password' LIMIT 1";
-            $result = mysqli_query($conn, $query);
+            $stmt = mysqli_prepare($conn, "SELECT id, username, password FROM admin WHERE username = ? LIMIT 1");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, "s", $username);
+                mysqli_stmt_execute($stmt);
+                $result = mysqli_stmt_get_result($stmt);
 
-            if ($result && mysqli_num_rows($result) === 1) {
-                $row = mysqli_fetch_assoc($result);
-                $_SESSION['admin_id'] = $row['id'];
-                $_SESSION['admin_username'] = $row['username'];
-                header("Location: admin/dashboard.php");
-                exit;
+                if ($result && $row = mysqli_fetch_assoc($result)) {
+                    if (password_verify($password, $row['password']) || $password === $row['password']) {
+                        // SUCCESS — reset lockout counter
+                        unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
+                        session_regenerate_id(true);
+                        $_SESSION['admin_id']       = (int)$row['id'];
+                        $_SESSION['admin_username'] = $row['username'];
+                        $_SESSION['last_activity']  = time();
+                        header("Location: admin/dashboard.php");
+                        exit;
+                    } else {
+                        $error = "Invalid admin username or password.";
+                    }
+                } else {
+                    $error = "Invalid admin username or password.";
+                }
+                mysqli_stmt_close($stmt);
             } else {
-                $error = "Invalid admin username or password.";
+                $error = "Database query error. Please try again.";
             }
+        }
+    }
+
+    // FAILED attempt — increment counter & trigger lockout when threshold reached
+    if (!empty($error) && $error !== "Please enter both Student ID and Password."
+                       && $error !== "Please enter both Username and Password.") {
+        $_SESSION[$lockout_key] = ($_SESSION[$lockout_key] ?? 0) + 1;
+        $attempts_left = MAX_LOGIN_ATTEMPTS - (int)$_SESSION[$lockout_key];
+
+        if ((int)$_SESSION[$lockout_key] >= MAX_LOGIN_ATTEMPTS) {
+            $_SESSION[$lockout_ts_key] = time() + LOCKOUT_SECONDS;
+            unset($_SESSION[$lockout_key]);
+            $error = "Too many failed login attempts. Your account is locked for 15 minutes.";
+        } elseif ($attempts_left <= 2) {
+            $error .= " ({$attempts_left} attempt(s) remaining before lockout)";
         }
     }
 }
@@ -158,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label class="form-label fw-semibold text-secondary">Student ID</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-person-badge text-muted"></i></span>
-                                <input type="text" name="email" class="form-control" placeholder="e.g. 96579@rclasses.com" required>
+                                <input type="text" name="email" class="form-control" placeholder="e.g. 1001@rclasses.com" required>
                             </div>
                         </div>
                         <div class="mb-4">
@@ -199,22 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- Demo Credentials Helper -->
-            <div class="mt-4 pt-3 border-top">
-                <div class="bg-light p-3 rounded-3 small">
-                    <div class="fw-bold text-dark mb-1"><i class="bi bi-info-circle-fill me-1 text-primary"></i> Demo Credentials:</div>
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <span class="text-muted">Admin:</span><br>
-                            <code>admin</code> / <code>admin123</code>
-                        </div>
-                        <div class="col-6">
-                            <span class="text-muted">Student:</span><br>
-                            <code>96579@rclasses.com</code> / <code>student</code>
-                        </div>
-                    </div>
-                </div>
-            </div>
+
 
         </div>
     </div>
@@ -227,5 +323,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<?php
+// Re-open the correct tab if a login attempt was made
+$active_role = $_POST['role'] ?? '';
+if ($active_role === 'admin'):
+?>
+<script>
+    // Restore admin tab after failed admin login
+    document.addEventListener('DOMContentLoaded', function () {
+        var adminTab = document.getElementById('admin-tab');
+        if (adminTab) {
+            var tab = new bootstrap.Tab(adminTab);
+            tab.show();
+        }
+    });
+</script>
+<?php endif; ?>
 </body>
 </html>
