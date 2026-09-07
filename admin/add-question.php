@@ -48,10 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$exam_exists) {
                 $error = "Invalid exam selected.";
             } elseif ($question_type === 'descriptive') {
-                // Descriptive Question: No options required
-                $stmt = mysqli_prepare($conn, "INSERT INTO questions (exam_id, question_text, question_type, option_a, option_b, option_c, option_d, correct_option) VALUES (?, ?, 'descriptive', NULL, NULL, NULL, NULL, NULL)");
+                // Descriptive Question: read marks from form (default 5)
+                $desc_marks = max(0.5, (float)($_POST['desc_marks'] ?? 5));
+
+                $stmt = mysqli_prepare($conn, "INSERT INTO questions (exam_id, question_text, question_type, marks, option_a, option_b, option_c, option_d, correct_option) VALUES (?, ?, 'descriptive', ?, NULL, NULL, NULL, NULL, NULL)");
                 if ($stmt) {
-                    mysqli_stmt_bind_param($stmt, "is", $exam_id, $question_text);
+                    mysqli_stmt_bind_param($stmt, "isd", $exam_id, $question_text, $desc_marks);
                     if (mysqli_stmt_execute($stmt)) {
                         mysqli_stmt_close($stmt);
                         $_SESSION['flash_success'] = "Descriptive Question added successfully! (Exams with descriptive questions will hold results for review).";
@@ -66,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = "Database query error.";
                 }
             } else {
-                // MCQ Question
+                // MCQ Question — 1 mark each
                 $option_a      = trim($_POST['option_a'] ?? '');
                 $option_b      = trim($_POST['option_b'] ?? '');
                 $option_c      = trim($_POST['option_c'] ?? '');
@@ -81,9 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (strlen($option_a) > 500 || strlen($option_b) > 500 || strlen($option_c) > 500 || strlen($option_d) > 500) {
                     $error = "Option text is too long (max 500 characters each).";
                 } else {
-                    $stmt = mysqli_prepare($conn, "INSERT INTO questions (exam_id, question_text, question_type, option_a, option_b, option_c, option_d, correct_option) VALUES (?, ?, 'mcq', ?, ?, ?, ?, ?)");
+                    $mcq_marks = 1;
+                    $stmt = mysqli_prepare($conn, "INSERT INTO questions (exam_id, question_text, question_type, marks, option_a, option_b, option_c, option_d, correct_option) VALUES (?, ?, 'mcq', ?, ?, ?, ?, ?, ?)");
                     if ($stmt) {
-                        mysqli_stmt_bind_param($stmt, "issssss", $exam_id, $question_text, $option_a, $option_b, $option_c, $option_d, $correct_option);
+                        mysqli_stmt_bind_param($stmt, "isdsssss", $exam_id, $question_text, $mcq_marks, $option_a, $option_b, $option_c, $option_d, $correct_option);
                         if (mysqli_stmt_execute($stmt)) {
                             mysqli_stmt_close($stmt);
                             $_SESSION['flash_success'] = "MCQ Question added successfully!";
@@ -209,15 +212,33 @@ $exams = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
             </div>
 
             <!-- Descriptive Notice Container -->
-            <div id="descriptiveNotice" class="alert alert-info border-0 bg-info-subtle mb-4" style="display: none;">
-                <div class="d-flex align-items-start gap-2">
-                    <i class="bi bi-info-circle-fill text-info fs-5 mt-0.5"></i>
-                    <div>
-                        <strong class="text-dark d-block mb-1">Descriptive / Subjective Question Format:</strong>
-                        <p class="mb-0 text-muted small">
-                            Students will receive an open text box to write their response. Any exam containing descriptive questions will automatically hold student results in <strong>Pending Review</strong> status until an instructor grades the answer in the <em>Results</em> section.
-                        </p>
+            <div id="descriptiveNotice" class="mb-4" style="display: none;">
+                <div class="alert alert-info border-0 bg-info-subtle">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-info-circle-fill text-info fs-5 mt-0.5"></i>
+                        <div>
+                            <strong class="text-dark d-block mb-1">Descriptive / Subjective Question Format:</strong>
+                            <p class="mb-0 text-muted small">
+                                Students will receive an open text box to write their response. Any exam containing descriptive questions will automatically hold student results in <strong>Pending Review</strong> status until an instructor grades the answer in the <em>Results</em> section.
+                            </p>
+                        </div>
                     </div>
+                </div>
+                <!-- Max Marks for descriptive -->
+                <div class="mb-3">
+                    <label for="desc_marks" class="form-label fw-semibold">
+                        <i class="bi bi-award text-primary me-1"></i> Max Marks for this Question
+                    </label>
+                    <input type="number"
+                           name="desc_marks"
+                           id="desc_marks"
+                           class="form-control"
+                           min="0.5"
+                           max="100"
+                           step="0.5"
+                           value="5"
+                           style="max-width: 160px;">
+                    <div class="form-text">Default is 5. You can set any value (e.g. 2, 5, 10).</div>
                 </div>
             </div>
 

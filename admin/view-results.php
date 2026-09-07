@@ -155,7 +155,7 @@ if ($stmt_results) {
 $answers_by_result = [];
 if (!empty($result_ids)) {
     $ids_str  = implode(',', array_map('intval', $result_ids));
-    $sa_query = mysqli_query($conn, "SELECT sa.*, q.question_text, q.question_type, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option 
+    $sa_query = mysqli_query($conn, "SELECT sa.*, q.question_text, q.question_type, q.marks AS question_marks, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option 
                                       FROM student_answers sa
                                       JOIN questions q ON sa.question_id = q.id
                                       WHERE sa.result_id IN ($ids_str)
@@ -387,7 +387,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
         }
     ?>
     <div class="modal fade" id="reviewModal<?php echo $rid; ?>" tabindex="-1" aria-labelledby="reviewModalLabel<?php echo $rid; ?>" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-height: 95vh;">
             <div class="modal-content border-0 shadow-lg rounded-4">
                 <form method="POST" action="view-results.php">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
@@ -421,8 +421,11 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                     </div>
 
                                     <?php foreach ($desc_items as $d_idx => $d_item): 
-                                        $aid = $d_item['id'];
+                                        $aid          = $d_item['id'];
                                         $current_marks = $d_item['marks_awarded'] ?? 0;
+                                        $max_marks    = isset($d_item['question_marks']) && (float)$d_item['question_marks'] > 0
+                                                        ? (float)$d_item['question_marks'] : 5;
+                                        $half_marks   = round($max_marks / 2, 2);
                                     ?>
                                         <div class="card mb-3 border rounded-3 p-3 bg-white shadow-sm">
                                             <div class="d-flex justify-content-between align-items-start mb-2">
@@ -439,7 +442,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
 
                                             <div class="row align-items-center g-2">
                                                 <div class="col-auto">
-                                                    <label class="form-label fw-bold mb-0 text-primary small">Marks Awarded (0.0 to 1.0):</label>
+                                                    <label class="form-label fw-bold mb-0 text-primary small">Marks Awarded (0 to <?php echo $max_marks; ?>):</label>
                                                 </div>
                                                 <div class="col-auto">
                                                     <input type="number" 
@@ -447,15 +450,15 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                                            id="desc_mark_<?php echo $aid; ?>"
                                                            class="form-control form-control-sm desc-mark-input-<?php echo $rid; ?> fw-bold" 
                                                            min="0" 
-                                                           max="1" 
-                                                           step="0.1" 
+                                                           max="<?php echo $max_marks; ?>" 
+                                                           step="0.5" 
                                                            value="<?php echo htmlspecialchars($current_marks); ?>" 
                                                            style="width: 100px;">
                                                 </div>
                                                 <div class="col-auto">
-                                                    <button type="button" class="btn btn-sm btn-outline-success" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '1.0'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Full Mark (1.0)</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '0.5'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Half Mark (0.5)</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '0.0'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Zero (0.0)</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-success" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $max_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Full Mark (<?php echo $max_marks; ?>)</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $half_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Half Mark (<?php echo $half_marks; ?>)</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '0'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Zero (0)</button>
                                                 </div>
                                             </div>
                                         </div>
