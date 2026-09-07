@@ -403,7 +403,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
     <div class="modal fade" id="reviewModal<?php echo $rid; ?>" tabindex="-1" aria-labelledby="reviewModalLabel<?php echo $rid; ?>" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-height: 95vh;">
             <div class="modal-content border-0 shadow-lg rounded-4">
-                <form method="POST" action="view-results.php">
+                <form method="POST" action="view-results.php" style="display:flex; flex-direction:column; overflow:hidden; height:100%;">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                     <input type="hidden" name="action" value="save_evaluation">
                     <input type="hidden" name="result_id" value="<?php echo $rid; ?>">
@@ -422,7 +422,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
 
-                    <div class="modal-body p-4">
+                    <div class="modal-body p-4" style="flex:1; overflow-y:auto;">
                         <?php if ($has_items): ?>
                             <!-- Descriptive Questions Section -->
                             <?php if (!empty($desc_items)): ?>
