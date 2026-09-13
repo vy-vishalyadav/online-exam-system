@@ -100,18 +100,12 @@ body {
    Stat Cards - Rich Gradient Backgrounds & White Text
    ========================================================================== */
 .stat-card {
-    border: none !important;
     border-radius: 16px !important;
     padding: 1.6rem !important;
     box-shadow: var(--shadow-md) !important;
     transition: transform 0.25s ease, box-shadow 0.25s ease !important;
     position: relative !important;
     overflow: hidden !important;
-    color: #ffffff !important;
-}
-
-.stat-card * {
-    color: #ffffff !important;
 }
 
 .stat-card:hover {
@@ -121,11 +115,9 @@ body {
 
 .stat-card .stat-icon {
     font-size: 3.5rem !important;
-    opacity: 0.3 !important;
     position: absolute !important;
     right: 1rem !important;
     bottom: 0.5rem !important;
-    color: #ffffff !important;
 }
 
 /* Stat card color variants */
