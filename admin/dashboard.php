@@ -52,37 +52,37 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
 <div class="row g-3 mb-5">
     <div class="col-md-6 col-xl-3">
         <a href="manage-students.php" class="text-decoration-none">
-            <div class="stat-card" style="background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%); color:#fff;">
-                <h6 class="mb-1 fw-bold text-white opacity-75">Total Students</h6>
-                <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_students; ?></h2>
-                <i class="bi bi-people-fill stat-icon text-white"></i>
+            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #4f46e5 !important;">
+                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Students</h6>
+                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_students; ?></h2>
+                <i class="bi bi-people-fill stat-icon" style="color:#4f46e5; opacity:0.12;"></i>
             </div>
         </a>
     </div>
     <div class="col-md-6 col-xl-3">
         <a href="manage-exam.php" class="text-decoration-none">
-            <div class="stat-card" style="background: linear-gradient(135deg, #059669 0%, #047857 100%); color:#fff;">
-                <h6 class="mb-1 fw-bold text-white opacity-75">Total Exams</h6>
-                <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_exams; ?></h2>
-                <i class="bi bi-journal-bookmark-fill stat-icon text-white"></i>
+            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #059669 !important;">
+                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Exams</h6>
+                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_exams; ?></h2>
+                <i class="bi bi-journal-bookmark-fill stat-icon" style="color:#059669; opacity:0.12;"></i>
             </div>
         </a>
     </div>
     <div class="col-md-6 col-xl-3">
         <a href="manage-questions.php" class="text-decoration-none">
-            <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); color:#fff;">
-                <h6 class="mb-1 fw-bold text-white opacity-75">Total Questions</h6>
-                <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_questions; ?></h2>
-                <i class="bi bi-patch-question-fill stat-icon text-white"></i>
+            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #7c3aed !important;">
+                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Questions</h6>
+                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_questions; ?></h2>
+                <i class="bi bi-patch-question-fill stat-icon" style="color:#7c3aed; opacity:0.12;"></i>
             </div>
         </a>
     </div>
     <div class="col-md-6 col-xl-3">
         <a href="view-results.php" class="text-decoration-none">
-            <div class="stat-card" style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color:#fff;">
-                <h6 class="mb-1 fw-bold text-white opacity-75">Total Attempts</h6>
-                <h2 class="fw-extrabold mb-0 text-white"><?php echo $total_results; ?></h2>
-                <i class="bi bi-bar-chart-fill stat-icon text-white"></i>
+            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #d97706 !important;">
+                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Attempts</h6>
+                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_results; ?></h2>
+                <i class="bi bi-bar-chart-fill stat-icon" style="color:#d97706; opacity:0.12;"></i>
             </div>
         </a>
     </div>

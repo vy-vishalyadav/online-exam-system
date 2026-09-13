@@ -276,7 +276,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                             <label class="form-label fw-semibold text-secondary">Password</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-key text-muted"></i></span>
-                                <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
+                                <input type="password" name="password" id="studentPassword" class="form-control" placeholder="Enter your password" required>
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('studentPassword', this)" tabindex="-1">
+                                    <i class="bi bi-eye"></i>
+                                </button>
                             </div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100 py-2.5 shadow-sm fw-bold">
@@ -300,7 +303,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                             <label class="form-label fw-semibold text-secondary">Password</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-lock text-muted"></i></span>
-                                <input type="password" name="password" class="form-control" placeholder="Enter admin password" required>
+                                <input type="password" name="password" id="adminPassword" class="form-control" placeholder="Enter admin password" required>
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('adminPassword', this)" tabindex="-1">
+                                    <i class="bi bi-eye"></i>
+                                </button>
                             </div>
                         </div>
                         <button type="submit" class="btn btn-dark w-100 py-2.5 shadow-sm fw-bold">
@@ -308,6 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                         </button>
                     </form>
                 </div>
+
             </div>
 
 
@@ -339,5 +346,19 @@ if ($active_role === 'admin'):
     });
 </script>
 <?php endif; ?>
+<script>
+function togglePass(fieldId, btn) {
+    var field = document.getElementById(fieldId);
+    var icon  = btn.querySelector('i');
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        field.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+</script>
 </body>
+
 </html>

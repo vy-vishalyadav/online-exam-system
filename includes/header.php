@@ -143,11 +143,6 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                                 <i class="bi bi-trophy me-1"></i> My Results
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'change-password.php') ? 'active' : ''; ?>" href="change-password.php">
-                                <i class="bi bi-key me-1"></i> Change Password
-                            </a>
-                        </li>
                     <?php endif; ?>
                 </ul>
 
@@ -160,14 +155,30 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                             <i class="bi bi-box-arrow-right me-1"></i> Logout
                         </a>
                     <?php elseif ($is_student): ?>
-                        <div class="user-badge d-flex align-items-center gap-1">
-                            <i class="bi bi-person-circle text-info me-1"></i> <strong><?php echo htmlspecialchars($_SESSION['student_name']); ?></strong>
+                        <!-- Student profile dropdown -->
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-light border rounded-pill px-3 d-flex align-items-center gap-2 fw-semibold" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-person-circle text-info"></i>
+                                <?php echo htmlspecialchars($_SESSION['student_name']); ?>
+                                <i class="bi bi-chevron-down small"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3 mt-1">
+                                <li>
+                                    <a class="dropdown-item <?php echo ($current_page === 'change-password.php') ? 'active' : ''; ?>" href="change-password.php">
+                                        <i class="bi bi-key me-2 text-primary"></i> Change Password
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider my-1"></li>
+                                <li>
+                                    <a class="dropdown-item text-danger" href="<?php echo $logout_url; ?>">
+                                        <i class="bi bi-box-arrow-right me-2"></i> Logout
+                                    </a>
+                                </li>
+                            </ul>
                         </div>
-                        <a href="<?php echo $logout_url; ?>" class="btn btn-logout btn-sm rounded-pill px-3 fw-bold">
-                            <i class="bi bi-box-arrow-right me-1"></i> Logout
-                        </a>
                     <?php endif; ?>
                 </div>
+
             </div>
         <?php endif; ?>
     </div>
