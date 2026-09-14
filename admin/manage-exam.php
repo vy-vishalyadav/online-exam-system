@@ -45,6 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
         $title       = trim($_POST['title'] ?? '');
         $duration    = (int)($_POST['duration_minutes'] ?? 30);
         $result_mode = ($_POST['result_mode'] ?? 'instant') === 'pending' ? 'pending' : 'instant';
+        $start_at    = trim($_POST['start_at'] ?? '');
+        $end_at      = trim($_POST['end_at']   ?? '');
+        // Convert empty strings to null; validate datetime format
+        $start_at = ($start_at !== '') ? date('Y-m-d H:i:s', strtotime($start_at)) : null;
+        $end_at   = ($end_at   !== '') ? date('Y-m-d H:i:s', strtotime($end_at))   : null;
 
         if (empty($title)) {
             $error = "Exam Title is required.";
@@ -52,10 +57,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
             $error = "Exam title is too long (max 200 characters).";
         } elseif ($duration < 1 || $duration > 600) {
             $error = "Duration must be between 1 and 600 minutes.";
+        } elseif ($start_at && $end_at && strtotime($end_at) <= strtotime($start_at)) {
+            $error = "End time must be after start time.";
         } else {
-            $stmt = mysqli_prepare($conn, "INSERT INTO exams (title, duration_minutes, result_mode) VALUES (?, ?, ?)");
+            $stmt = mysqli_prepare($conn, "INSERT INTO exams (title, duration_minutes, result_mode, start_at, end_at) VALUES (?, ?, ?, ?, ?)");
             if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "sis", $title, $duration, $result_mode);
+                mysqli_stmt_bind_param($stmt, "sisss", $title, $duration, $result_mode, $start_at, $end_at);
                 if (mysqli_stmt_execute($stmt)) {
                     mysqli_stmt_close($stmt);
                     $_SESSION['flash_success'] = "Exam '" . htmlspecialchars($title) . "' added successfully!";
@@ -81,6 +88,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
         $title       = trim($_POST['title'] ?? '');
         $duration    = (int)($_POST['duration_minutes'] ?? 30);
         $result_mode = ($_POST['result_mode'] ?? 'instant') === 'pending' ? 'pending' : 'instant';
+        $start_at    = trim($_POST['start_at'] ?? '');
+        $end_at      = trim($_POST['end_at']   ?? '');
+        $start_at = ($start_at !== '') ? date('Y-m-d H:i:s', strtotime($start_at)) : null;
+        $end_at   = ($end_at   !== '') ? date('Y-m-d H:i:s', strtotime($end_at))   : null;
 
         if (empty($title)) {
             $error = "Exam Title is required.";
@@ -88,10 +99,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
             $error = "Exam title is too long (max 200 characters).";
         } elseif ($duration < 1 || $duration > 600) {
             $error = "Duration must be between 1 and 600 minutes.";
+        } elseif ($start_at && $end_at && strtotime($end_at) <= strtotime($start_at)) {
+            $error = "End time must be after start time.";
         } else {
-            $stmt = mysqli_prepare($conn, "UPDATE exams SET title=?, duration_minutes=?, result_mode=? WHERE id=?");
+            $stmt = mysqli_prepare($conn, "UPDATE exams SET title=?, duration_minutes=?, result_mode=?, start_at=?, end_at=? WHERE id=?");
             if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "sisi", $title, $duration, $result_mode, $exam_id);
+                mysqli_stmt_bind_param($stmt, "sisssi", $title, $duration, $result_mode, $start_at, $end_at, $exam_id);
                 if (mysqli_stmt_execute($stmt)) {
                     mysqli_stmt_close($stmt);
                     $_SESSION['flash_success'] = "Exam updated successfully!";
@@ -163,6 +176,7 @@ $exams = mysqli_query($conn, "SELECT e.*,
                         <th class="ps-4">#</th>
                         <th>Exam Title</th>
                         <th>Duration</th>
+                        <th>Schedule</th>
                         <th>Questions</th>
                         <th>Result Mode</th>
                         <th class="text-center pe-4">Actions</th>
@@ -180,6 +194,24 @@ $exams = mysqli_query($conn, "SELECT e.*,
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
                             <td><strong class="text-dark"><?php echo htmlspecialchars($e['title']); ?></strong></td>
                             <td><span class="badge bg-light text-dark border"><i class="bi bi-clock me-1"></i><?php echo (int)$e['duration_minutes']; ?> mins</span></td>
+                            <td>
+                                <?php
+                                $now      = time();
+                                $s_at     = $e['start_at'] ? strtotime($e['start_at']) : null;
+                                $e_at     = $e['end_at']   ? strtotime($e['end_at'])   : null;
+                                if ($s_at && $e_at) {
+                                    if ($now < $s_at) {
+                                        echo '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, H:i', $s_at) . '</span>';
+                                    } elseif ($now >= $s_at && $now <= $e_at) {
+                                        echo '<span class="badge bg-success rounded-pill px-2 py-1"><i class="bi bi-broadcast me-1"></i>LIVE until ' . date('H:i', $e_at) . '</span>';
+                                    } else {
+                                        echo '<span class="badge bg-secondary rounded-pill px-2 py-1"><i class="bi bi-lock me-1"></i>Ended ' . date('d M', $e_at) . '</span>';
+                                    }
+                                } else {
+                                    echo '<span class="text-muted small">Always open</span>';
+                                }
+                                ?>
+                            </td>
                             <td>
                                 <a href="manage-questions.php?exam_id=<?php echo $e['id']; ?>" class="text-decoration-none">
                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
@@ -257,6 +289,22 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                                             <i class="bi bi-info-circle me-1"></i> If this exam has descriptive questions, results will automatically be held for review.
                                                         </div>
                                                     </div>
+                                                    <hr class="my-3">
+                                                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-calendar-range me-1"></i> EXAM SCHEDULE (optional)</p>
+                                                    <div class="row g-3">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label fw-semibold">Opens At</label>
+                                                            <input type="datetime-local" name="start_at" class="form-control"
+                                                                value="<?php echo $e['start_at'] ? date('Y-m-d\TH:i', strtotime($e['start_at'])) : ''; ?>">
+                                                            <div class="form-text">Leave blank = always accessible</div>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label fw-semibold">Closes At</label>
+                                                            <input type="datetime-local" name="end_at" class="form-control"
+                                                                value="<?php echo $e['end_at'] ? date('Y-m-d\TH:i', strtotime($e['end_at'])) : ''; ?>">
+                                                            <div class="form-text">Students locked out after this</div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 <div class="modal-footer bg-light">
                                                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -313,6 +361,20 @@ $exams = mysqli_query($conn, "SELECT e.*,
                         </select>
                         <div class="form-text text-muted">
                             <i class="bi bi-info-circle me-1"></i> If descriptive questions are added, results will automatically be set to Pending Review.
+                        </div>
+                    </div>
+                    <hr class="my-3">
+                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-calendar-range me-1"></i> EXAM SCHEDULE (optional)</p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Opens At</label>
+                            <input type="datetime-local" name="start_at" class="form-control">
+                            <div class="form-text">Leave blank = always accessible</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Closes At</label>
+                            <input type="datetime-local" name="end_at" class="form-control">
+                            <div class="form-text">Students locked out after this</div>
                         </div>
                     </div>
                 </div>

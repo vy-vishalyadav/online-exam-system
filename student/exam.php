@@ -33,6 +33,35 @@ if (!$exam) {
     exit;
 }
 
+// ── Schedule enforcement ─────────────────────────────────────────────────────
+$now      = time();
+$start_at = !empty($exam['start_at']) ? strtotime($exam['start_at']) : null;
+$end_at   = !empty($exam['end_at'])   ? strtotime($exam['end_at'])   : null;
+
+if ($start_at && $now < $start_at) {
+    // Exam hasn't opened yet
+    echo '<div class="card border-0 shadow-sm rounded-4 p-5 text-center my-4">
+        <i class="bi bi-calendar-event fs-1 text-info d-block mb-3"></i>
+        <h5 class="fw-bold">Exam Not Open Yet</h5>
+        <p class="text-muted">This exam opens on <strong>' . date('d M Y \a\t h:i A', $start_at) . '</strong>.</p>
+        <a href="dashboard.php" class="btn btn-outline-primary fw-bold px-4">Back to Dashboard</a>
+    </div>';
+    include '../includes/footer.php';
+    exit;
+}
+
+if ($end_at && $now > $end_at) {
+    // Exam window has closed
+    echo '<div class="card border-0 shadow-sm rounded-4 p-5 text-center my-4">
+        <i class="bi bi-lock-fill fs-1 text-danger d-block mb-3"></i>
+        <h5 class="fw-bold">Exam Window Closed</h5>
+        <p class="text-muted">This exam closed on <strong>' . date('d M Y \a\t h:i A', $end_at) . '</strong>. No further submissions are accepted.</p>
+        <a href="dashboard.php" class="btn btn-outline-secondary fw-bold px-4">Back to Dashboard</a>
+    </div>';
+    include '../includes/footer.php';
+    exit;
+}
+
 $duration = (int)($exam['duration_minutes'] ?? 30);
 
 // ── Phase 1: Server-side timer & question-order seed ─────────────────────────

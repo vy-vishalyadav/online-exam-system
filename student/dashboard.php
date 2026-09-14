@@ -46,11 +46,27 @@ $exams = mysqli_query($conn, $query);
             $is_pending = ($has_attempted && $last_status === 'pending');
             $passed = ($has_attempted && !$is_pending && $last_score >= 50);
             $filter_status = (!$has_attempted || (!$passed && !$is_pending)) ? 'todo' : 'completed';
+
+            // Schedule status
+            $now_ts   = time();
+            $s_at     = !empty($exam['start_at']) ? strtotime($exam['start_at']) : null;
+            $e_at     = !empty($exam['end_at'])   ? strtotime($exam['end_at'])   : null;
+            $sched_locked   = false;
+            $sched_badge    = '';
+            if ($s_at && $now_ts < $s_at) {
+                $sched_locked = true;
+                $sched_badge  = '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1 small"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, h:i A', $s_at) . '</span>';
+            } elseif ($e_at && $now_ts > $e_at) {
+                $sched_locked = true;
+                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2 py-1 small"><i class="bi bi-lock me-1"></i>Closed ' . date('d M', $e_at) . '</span>';
+            } elseif ($s_at && $e_at) {
+                $sched_badge  = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small"><i class="bi bi-broadcast me-1"></i>Live until ' . date('h:i A', $e_at) . '</span>';
+            }
         ?>
             <div class="col-md-6 col-lg-4 exam-card-wrapper" data-status="<?php echo $filter_status; ?>">
                 <div class="hover-card h-100 p-4 d-flex flex-column justify-content-between">
                     <div>
-                        <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
                             <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
                                 <i class="bi bi-clock me-1"></i><?php echo (int)$exam['duration_minutes']; ?> mins
                             </span>
@@ -58,6 +74,9 @@ $exams = mysqli_query($conn, $query);
                                 <i class="bi bi-patch-question me-1"></i><?php echo $q_count; ?> Questions
                             </span>
                         </div>
+                        <?php if ($sched_badge): ?>
+                            <div class="mb-2"><?php echo $sched_badge; ?></div>
+                        <?php endif; ?>
 
                         <h5 class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($exam['title']); ?></h5>
                         
@@ -106,7 +125,13 @@ $exams = mysqli_query($conn, $query);
                     </div>
 
                     <div>
-                        <?php if ($q_count > 0): ?>
+                        <?php if ($sched_locked): ?>
+                            <!-- Schedule locked: disabled button -->
+                            <button class="btn btn-secondary w-100 fw-bold py-2" disabled>
+                                <i class="bi bi-lock me-1"></i>
+                                <?php echo ($s_at && time() < $s_at) ? 'Not Open Yet' : 'Exam Closed'; ?>
+                            </button>
+                        <?php elseif ($q_count > 0): ?>
                             <?php if ($passed): ?>
                                 <!-- Passed: muted retake button -->
                                 <a href="exam.php?id=<?php echo $exam['id']; ?>" class="btn btn-outline-secondary w-100 fw-bold py-2">

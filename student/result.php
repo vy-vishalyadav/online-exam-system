@@ -191,9 +191,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     }
                 }
 
-                // Phase 1: Mark exam session as submitted
+                // Phase 1: Mark exam session as submitted + record time taken
                 $upd = mysqli_prepare($conn,
-                    "UPDATE exam_sessions SET submitted=1 WHERE student_id=? AND exam_id=?");
+                    "UPDATE exam_sessions SET submitted=1,
+                     time_taken_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
+                     WHERE student_id=? AND exam_id=?");
                 if ($upd) {
                     mysqli_stmt_bind_param($upd, "ii", $student_id, $exam_id);
                     mysqli_stmt_execute($upd);
@@ -246,10 +248,13 @@ if (!empty($_SESSION['flash_already_submitted'])) {
     unset($_SESSION['flash_already_submitted']);
 }
 
-// Fetch all past results for this student (only their own results — filtered by $student_id from session)
-$stmt = mysqli_prepare($conn, "SELECT r.*, e.title AS exam_title
+// Fetch all past results for this student with time taken from exam_sessions
+$stmt = mysqli_prepare($conn, "SELECT r.*, e.title AS exam_title,
+                                es.time_taken_seconds
                                 FROM results r
                                 JOIN exams e ON r.exam_id = e.id
+                                LEFT JOIN exam_sessions es
+                                    ON es.student_id = r.student_id AND es.exam_id = r.exam_id
                                 WHERE r.student_id = ?
                                 ORDER BY r.attempted_at DESC");
 mysqli_stmt_bind_param($stmt, "i", $student_id);
@@ -467,6 +472,7 @@ mysqli_stmt_close($stmt);
                         <th class="ps-4">#</th>
                         <th>Exam Title</th>
                         <th>Score</th>
+                        <th>Time Taken</th>
                         <th>Status</th>
                         <th>Instructor Feedback</th>
                         <th class="pe-4 text-end">Attempted On</th>
@@ -491,6 +497,18 @@ mysqli_stmt_close($stmt);
                                         <?php echo $r['score']; ?>%
                                     </span>
                                 <?php endif; ?>
+                            </td>
+                            <td class="text-muted small">
+                                <?php
+                                $tt = (int)($r['time_taken_seconds'] ?? 0);
+                                if ($tt > 0) {
+                                    $mm = floor($tt / 60);
+                                    $ss = $tt % 60;
+                                    echo "<i class='bi bi-stopwatch me-1'></i>{$mm}m {$ss}s";
+                                } else {
+                                    echo '—';
+                                }
+                                ?>
                             </td>
                             <td>
                                 <?php if ($is_pending): ?>

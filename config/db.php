@@ -109,6 +109,19 @@ function run_auto_migrations($conn) {
         occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_violations (student_id, exam_id)
     )");
+
+    // 10. exams.start_at / end_at — exam schedule window
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM exams LIKE 'start_at'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE exams ADD COLUMN start_at DATETIME NULL AFTER result_mode");
+        @mysqli_query($conn, "ALTER TABLE exams ADD COLUMN end_at   DATETIME NULL AFTER start_at");
+    }
+
+    // 11. exam_sessions.time_taken_seconds — for "time taken" display in history
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM exam_sessions LIKE 'time_taken_seconds'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN time_taken_seconds INT NULL AFTER submitted");
+    }
 }
 
 run_auto_migrations($conn);
