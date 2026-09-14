@@ -73,6 +73,29 @@ function run_auto_migrations($conn) {
     if ($check && mysqli_num_rows($check) === 0) {
         @mysqli_query($conn, "ALTER TABLE questions ADD COLUMN marks DECIMAL(5,2) NOT NULL DEFAULT 1 AFTER question_type");
     }
+
+    // 7. exam_sessions — server-authoritative timer + question order seed
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS exam_sessions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        exam_id INT NOT NULL,
+        started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        duration_minutes INT NOT NULL DEFAULT 30,
+        question_seed VARCHAR(64) NOT NULL DEFAULT '',
+        submitted TINYINT(1) NOT NULL DEFAULT 0,
+        UNIQUE KEY uq_student_exam (student_id, exam_id)
+    )");
+
+    // 8. draft_answers — AJAX auto-save per question before final submission
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS draft_answers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        exam_id INT NOT NULL,
+        question_id INT NOT NULL,
+        answer TEXT NULL,
+        saved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_draft (student_id, exam_id, question_id)
+    )");
 }
 
 run_auto_migrations($conn);

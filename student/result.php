@@ -24,22 +24,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         $error_msg = "Invalid request. Please return to the exam and try again.";
     } else {
-        // One-time submission token check (prevents double-submit on page refresh)
-        $submit_token_key  = 'exam_submit_token_' . $exam_id;
-        $expected_token    = $_SESSION[$submit_token_key] ?? null;
-        $submitted_token   = $_POST['exam_submit_token'] ?? null;
+        // One-time submission token check
+        $submit_token_key = 'exam_submit_token_' . $exam_id;
+        $expected_token   = $_SESSION[$submit_token_key] ?? null;
+        $submitted_token  = $_POST['exam_submit_token'] ?? null;
 
         if (!$expected_token || !$submitted_token || !hash_equals($expected_token, $submitted_token)) {
-            // Token already consumed (refresh) or missing — redirect to history
             $_SESSION['flash_already_submitted'] = "Your exam was already submitted. Refreshing the page after submission has no effect.";
             header("Location: result.php");
             exit;
         }
 
-        // Consume the token immediately (prevents replay on second submission)
+        // Consume token
         unset($_SESSION[$submit_token_key]);
 
-        // Fetch exam using prepared statement
+        // Phase 1: also check server-side session hasn't been submitted already
+        $ss = mysqli_prepare($conn,
+            "SELECT submitted FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
+        if ($ss) {
+            mysqli_stmt_bind_param($ss, "ii", $student_id, $exam_id);
+            mysqli_stmt_execute($ss);
+            $ss_res = mysqli_stmt_get_result($ss);
+            $ss_row = $ss_res ? mysqli_fetch_assoc($ss_res) : null;
+            mysqli_stmt_close($ss);
+            if ($ss_row && $ss_row['submitted']) {
+                $_SESSION['flash_already_submitted'] = "Your exam was already submitted.";
+                header("Location: result.php");
+                exit;
+            }
+        }
+
+        // Fetch exam
         $stmt = mysqli_prepare($conn, "SELECT * FROM exams WHERE id = ? LIMIT 1");
         mysqli_stmt_bind_param($stmt, "i", $exam_id);
         mysqli_stmt_execute($stmt);
@@ -55,8 +70,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             $correct_count   = 0;
             $recorded_answers = [];
 
+            // Phase 1: get option_maps from session (shuffled option labels)
+            $option_maps = $_SESSION['option_maps_' . $exam_id] ?? [];
+
             $user_mcq_answers  = $_POST['answer'] ?? [];
             $user_desc_answers = $_POST['descriptive_answer'] ?? [];
+
+            // Phase 1: fallback — load from draft_answers if POST is empty (e.g. auto-submit)
+            if (empty($user_mcq_answers) && empty($user_desc_answers)) {
+                $df = mysqli_prepare($conn,
+                    "SELECT question_id, answer FROM draft_answers WHERE student_id=? AND exam_id=?");
+                if ($df) {
+                    mysqli_stmt_bind_param($df, "ii", $student_id, $exam_id);
+                    mysqli_stmt_execute($df);
+                    $df_res = mysqli_stmt_get_result($df);
+                    while ($dr = mysqli_fetch_assoc($df_res)) {
+                        $qid = (int)$dr['question_id'];
+                        $ans = $dr['answer'];
+                        // Determine if MCQ (single letter) or descriptive
+                        if (in_array(strtoupper($ans), ['A','B','C','D']) && strlen($ans) <= 1) {
+                            $user_mcq_answers[$qid]  = strtoupper($ans);
+                        } else {
+                            $user_desc_answers[$qid] = $ans;
+                        }
+                    }
+                    mysqli_stmt_close($df);
+                }
+            }
 
             if ($questions_res) {
                 while ($q = mysqli_fetch_assoc($questions_res)) {
@@ -67,7 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     if ($q_type === 'descriptive') {
                         $desc_count++;
                         $desc_text = trim($user_desc_answers[$q_id] ?? '');
-                        // Limit descriptive answer length
                         if (strlen($desc_text) > 5000) $desc_text = substr($desc_text, 0, 5000);
                         $recorded_answers[] = [
                             'question_id'   => $q_id,
@@ -79,15 +118,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                         ];
                     } else {
                         $mcq_count++;
-                        // Only accept A/B/C/D as valid answers
                         $raw_ans  = strtoupper(trim($user_mcq_answers[$q_id] ?? ''));
                         $user_ans = in_array($raw_ans, ['A','B','C','D']) ? $raw_ans : null;
-                        $correct_ans = strtoupper(trim($q['correct_option'] ?? ''));
-                        $is_correct  = ($user_ans !== null && $user_ans === $correct_ans);
 
-                        if ($is_correct) {
-                            $correct_count++;
+                        // Phase 1: use original correct_option (pre-shuffle) OR option_map if available
+                        $original_correct = strtoupper(trim($q['correct_option'] ?? ''));
+                        if (!empty($option_maps[$q_id])) {
+                            // The shuffled correct label is stored in option_maps
+                            $shuffled_correct = $option_maps[$q_id]['correct'] ?? $original_correct;
+                        } else {
+                            $shuffled_correct = $original_correct;
                         }
+                        $is_correct = ($user_ans !== null && $user_ans === $shuffled_correct);
+                        if ($is_correct) $correct_count++;
 
                         $recorded_answers[] = [
                             'question_id'   => $q_id,
@@ -98,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                             'option_c'      => $q['option_c'],
                             'option_d'      => $q['option_d'],
                             'user_ans'      => $user_ans,
-                            'correct_ans'   => $correct_ans,
+                            'correct_ans'   => $original_correct,
                             'is_correct'    => $is_correct ? 1 : 0,
                             'marks'         => $is_correct ? 1 : 0
                         ];
@@ -106,8 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                 }
             }
 
-            // Result Status Logic:
-            // If descriptive questions exist OR exam result_mode is 'pending' -> ALWAYS Pending Review
+            // Clear option maps from session after use
+            unset($_SESSION['option_maps_' . $exam_id]);
+
             $exam_mode = $exam['result_mode'] ?? 'instant';
             if ($desc_count > 0 || $exam_mode === 'pending') {
                 $status = 'pending';
@@ -117,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
 
             $score_percentage = ($total_questions > 0) ? round(($correct_count / $total_questions) * 100) : 0;
 
-            // Save result using prepared statement
+            // Save result
             $result_id = 0;
             $stmt = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
             if ($stmt) {
@@ -131,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             if ($result_id <= 0) {
                 $error_msg = "Failed to save your exam result. Please contact your instructor.";
             } else {
-                // Record student individual answers (only if result was saved)
+                // Save individual answers
                 foreach ($recorded_answers as $ans) {
                     $qid     = (int)$ans['question_id'];
                     $u_ans   = $ans['user_ans'] ?? '';
@@ -147,7 +191,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     }
                 }
 
-                // PRG: Store submission review in session and redirect to result.php
+                // Phase 1: Mark exam session as submitted
+                $upd = mysqli_prepare($conn,
+                    "UPDATE exam_sessions SET submitted=1 WHERE student_id=? AND exam_id=?");
+                if ($upd) {
+                    mysqli_stmt_bind_param($upd, "ii", $student_id, $exam_id);
+                    mysqli_stmt_execute($upd);
+                    mysqli_stmt_close($upd);
+                }
+
+                // Phase 1: Clean up draft answers (no longer needed)
+                $del = mysqli_prepare($conn,
+                    "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
+                if ($del) {
+                    mysqli_stmt_bind_param($del, "ii", $student_id, $exam_id);
+                    mysqli_stmt_execute($del);
+                    mysqli_stmt_close($del);
+                }
+
+                // PRG redirect
                 $_SESSION['submission_review'] = [
                     'result_id'       => $result_id,
                     'exam_title'      => $exam['title'],
@@ -169,6 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
         }
     }
 }
+
 
 // Retrieve and clear the submission review from session (after PRG redirect)
 if (!empty($_SESSION['submission_review'])) {
