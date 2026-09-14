@@ -162,6 +162,12 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
         <h6 class="fw-bold mb-0 text-warning-emphasis"><i class="bi bi-arrow-up-circle-fill me-2"></i>Bulk Promote — Year End</h6>
     </div>
     <div class="card-body py-3">
+        <div class="alert alert-warning border-0 rounded-3 mb-3 py-2 px-3 small">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>Promote in the correct order — highest class first:</strong>
+            <span class="ms-1">TYIT → Graduated &nbsp;›&nbsp; SYIT → TYIT &nbsp;›&nbsp; FYIT → SYIT.</span>
+            <br><span class="text-muted ms-4">Doing it in the wrong order will mix two batches together.</span>
+        </div>
         <form method="POST" class="row g-2 align-items-end" onsubmit="return confirm('Move ALL students from selected class to another? This cannot be undone easily.')">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <input type="hidden" name="action" value="promote_class">
