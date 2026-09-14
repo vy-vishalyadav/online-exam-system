@@ -69,7 +69,8 @@ $seed_string = md5($student_id . '_' . $exam_id . '_' . date('Ymd') . '_' . time
 
 // Check if a session already exists for this student+exam
 $sess_check = mysqli_prepare($conn,
-    "SELECT id, submitted FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
+    "SELECT id, submitted, TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds
+     FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
 mysqli_stmt_bind_param($sess_check, "ii", $student_id, $exam_id);
 mysqli_stmt_execute($sess_check);
 $sess_row = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_check));
@@ -101,13 +102,9 @@ if (!$sess_row) {
     mysqli_stmt_execute($cdel);
     mysqli_stmt_close($cdel);
 } else {
-    // In-progress session (submitted=0) — check if it has already expired.
-    // This happens when a student started an exam in a previous visit but never
-    // submitted it, so started_at is stale and elapsed > duration.
-    // Without this check, remaining_sec would be 0 and exam.php would immediately
-    // redirect to result.php showing 0% — the auto-submit bug.
-    $stale_elapsed  = (int)(time() - strtotime($sess_row['started_at']));
-    $stale_total    = (int)$duration * 60;
+    // In-progress session (submitted=0) — check if it has already expired in MySQL's time
+    $stale_elapsed = max(0, (int)($sess_row['elapsed_seconds'] ?? 0));
+    $stale_total   = (int)$duration * 60;
     if ($stale_elapsed >= $stale_total) {
         // Session has expired without being submitted — treat as a fresh start
         $reset_stale = mysqli_prepare($conn,
@@ -127,17 +124,17 @@ if (!$sess_row) {
     // else: genuinely in-progress and not yet expired — resume normally
 }
 
-// Fetch session (guaranteed to exist now)
+// Fetch session (guaranteed to exist now) using TIMESTAMPDIFF on MySQL's internal clock
 $sess_stmt = mysqli_prepare($conn,
-    "SELECT started_at, duration_minutes, question_seed, submitted
+    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, question_seed, submitted
      FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
 mysqli_stmt_bind_param($sess_stmt, "ii", $student_id, $exam_id);
 mysqli_stmt_execute($sess_stmt);
 $session = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_stmt));
 mysqli_stmt_close($sess_stmt);
 
-// Calculate remaining seconds (server-authoritative)
-$elapsed       = (int)(time() - strtotime($session['started_at']));
+// Calculate remaining seconds (server-authoritative via MySQL clock)
+$elapsed       = max(0, (int)($session['elapsed_seconds'] ?? 0));
 $total_seconds = (int)$session['duration_minutes'] * 60;
 $remaining_sec = max(0, $total_seconds - $elapsed);
 

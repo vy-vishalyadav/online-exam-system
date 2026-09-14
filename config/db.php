@@ -20,6 +20,10 @@ if (!$conn) {
     die("Database connection failed: " . mysqli_connect_error());
 }
 
+// Align timezone for PHP and MySQL (Asia/Kolkata +05:30)
+date_default_timezone_set('Asia/Kolkata');
+@mysqli_query($conn, "SET time_zone = '+05:30'");
+
 // Auto-migrate schema updates if not present
 function run_auto_migrations($conn) {
     if (!$conn) return;

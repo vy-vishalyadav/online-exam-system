@@ -36,7 +36,8 @@ if (strlen($answer) > 5000) {
 
 // Validate exam session hasn't timed out (server-side check)
 $sess_stmt = mysqli_prepare($conn,
-    "SELECT started_at, duration_minutes, submitted FROM exam_sessions
+    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, submitted
+     FROM exam_sessions
      WHERE student_id = ? AND exam_id = ? LIMIT 1");
 if ($sess_stmt) {
     mysqli_stmt_bind_param($sess_stmt, "ii", $student_id, $exam_id);
@@ -50,7 +51,7 @@ if ($sess_stmt) {
             echo json_encode(['ok' => false, 'error' => 'already_submitted']);
             exit;
         }
-        $elapsed  = (int)(time() - strtotime($sess['started_at']));
+        $elapsed  = max(0, (int)($sess['elapsed_seconds'] ?? 0));
         $allowed  = (int)$sess['duration_minutes'] * 60;
         if ($elapsed > $allowed + 30) { // 30s grace
             echo json_encode(['ok' => false, 'error' => 'time_expired']);

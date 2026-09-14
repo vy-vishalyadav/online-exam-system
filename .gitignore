@@ -13,3 +13,6 @@ desktop.ini
 # PHP error logs
 *.log
 error_log
+
+# Debug profile
+chrome-debug-profile/

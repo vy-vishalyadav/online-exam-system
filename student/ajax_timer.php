@@ -20,7 +20,8 @@ if (!$exam_id) {
 }
 
 $stmt = mysqli_prepare($conn,
-    "SELECT started_at, duration_minutes, submitted FROM exam_sessions
+    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, submitted
+     FROM exam_sessions
      WHERE student_id = ? AND exam_id = ? LIMIT 1");
 
 if (!$stmt) {
@@ -44,7 +45,7 @@ if ($sess['submitted']) {
     exit;
 }
 
-$elapsed   = (int)(time() - strtotime($sess['started_at']));
+$elapsed   = max(0, (int)($sess['elapsed_seconds'] ?? 0));
 $total_sec = (int)$sess['duration_minutes'] * 60;
 $remaining = max(0, $total_sec - $elapsed);
 
