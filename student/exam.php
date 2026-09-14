@@ -161,6 +161,27 @@ if ($is_fresh_session) {
     }
 }
 
+// ── Check existing violations for this student + exam ─────────────────────────
+if ($is_fresh_session) {
+    @mysqli_query($conn, "DELETE FROM exam_violations WHERE student_id=$student_id AND exam_id=$exam_id");
+    $initial_violations = 0;
+} else {
+    $v_stmt = mysqli_prepare($conn,
+        "SELECT COUNT(*) AS v_count FROM exam_violations 
+         WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit')");
+    mysqli_stmt_bind_param($v_stmt, "ii", $student_id, $exam_id);
+    mysqli_stmt_execute($v_stmt);
+    $v_row = mysqli_fetch_assoc(mysqli_stmt_get_result($v_stmt));
+    $initial_violations = (int)($v_row['v_count'] ?? 0);
+    mysqli_stmt_close($v_stmt);
+
+    if ($initial_violations >= 3) {
+        header("Location: result.php?timeout=1&exam_id={$exam_id}");
+        exit;
+    }
+}
+
+
 // ── Fetch questions ──────────────────────────────────────────────────────────
 $questions_res = mysqli_query($conn,
     "SELECT * FROM questions WHERE exam_id = " . (int)$exam_id . " ORDER BY id ASC");
@@ -283,6 +304,23 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         <div><a href="dashboard.php" class="btn btn-primary fw-bold px-4">Back to Dashboard</a></div>
     </div>
 <?php else: ?>
+
+    <!-- Fullscreen Enforcement Overlay (guarantees user gesture for fullscreen) -->
+    <div id="fullscreenOverlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.95);z-index:99999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);">
+        <div class="card border-0 shadow-lg rounded-4 p-4 p-md-5 text-center text-white" style="max-width:480px;background:#1e293b;">
+            <div class="mb-3">
+                <i class="bi bi-shield-lock-fill text-warning" style="font-size:3.5rem;"></i>
+            </div>
+            <h4 class="fw-bold mb-2">Fullscreen Mode Required</h4>
+            <p class="text-white-50 mb-4 small">
+                For academic integrity, this exam must be taken in Fullscreen Mode.
+                Switching tabs, exiting fullscreen, or minimizing the window will trigger a <strong>violation warning</strong>.
+            </p>
+            <button type="button" class="btn btn-primary btn-lg fw-bold px-4 py-2.5 rounded-pill shadow-lg" id="enterFullscreenBtn">
+                <i class="bi bi-arrows-fullscreen me-2"></i> Enter Fullscreen &amp; Begin
+            </button>
+        </div>
+    </div>
 
     <!-- Phase 2: Anti-Cheat Warning Modal -->
     <div class="modal fade" id="warningModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
@@ -575,16 +613,38 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     // ══════════════════════════════════════════════════════════════════════════
     const MAX_WARNINGS   = 3;
     const VIOLATION_URL  = 'ajax_log_violation.php';
-    let   warningCount   = 0;
-    let   modalShowing   = false;
+    let   warningCount   = <?php echo (int)$initial_violations; ?>;
     let   fsRequested    = false;
+    let   warningModalInstance = null;
 
-    const warningModal   = new bootstrap.Modal(document.getElementById('warningModal'), {backdrop:'static', keyboard:false});
+    function getWarningModal() {
+        if (!warningModalInstance && typeof bootstrap !== 'undefined') {
+            const modalEl = document.getElementById('warningModal');
+            if (modalEl) {
+                warningModalInstance = new bootstrap.Modal(modalEl, {backdrop:'static', keyboard:false});
+            }
+        }
+        return warningModalInstance;
+    }
+
     const warnCountEl    = document.getElementById('warnCount');
     const warnMsgEl      = document.getElementById('warningMessage');
     const warnDetailEl   = document.getElementById('warningDetail');
     const violBadge      = document.getElementById('violationBadge');
     const violCountEl    = document.getElementById('violationCount');
+
+    function updateViolationUI() {
+        if (warningCount > 0 && violBadge) {
+            violBadge.style.display = 'block';
+        }
+        if (violCountEl) violCountEl.textContent = warningCount;
+        if (warnCountEl) warnCountEl.textContent = warningCount;
+    }
+
+    // Initialize UI if continuing an attempt with prior warnings
+    if (warningCount > 0) {
+        updateViolationUI();
+    }
 
     // ── Log violation to server ───────────────────────────────────────────────
     function logViolation(type, detail) {
@@ -593,111 +653,133 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         fd.append('type',       type);
         fd.append('detail',     detail);
         fd.append('csrf_token', CSRF_TOKEN);
-        fetch(VIOLATION_URL, { method: 'POST', body: fd })
-            .then(r => r.json())
-            .then(d => {
-                if (d.violation_count !== undefined) {
-                    warningCount = d.violation_count;
-                }
-            })
-            .catch(() => {});
+
+        if (typeof fetch === 'function') {
+            fetch(VIOLATION_URL, { method: 'POST', body: fd, keepalive: true })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.ok && d.violation_count !== undefined) {
+                        warningCount = Math.max(warningCount, d.violation_count);
+                        updateViolationUI();
+                        if (warningCount >= MAX_WARNINGS && !isAutoSubmitting) {
+                            triggerAutoSubmit(`You have received ${MAX_WARNINGS} integrity violations.`);
+                        }
+                    }
+                })
+                .catch(() => {});
+        } else if (navigator.sendBeacon) {
+            navigator.sendBeacon(VIOLATION_URL, fd);
+        }
     }
 
     // ── Show warning modal ────────────────────────────────────────────────────
     function showWarning(type, message, detail) {
         if (isAutoSubmitting) return;
         warningCount++;
+        updateViolationUI();
         logViolation(type, detail);
 
-        // Update badge
-        if (violBadge) { violBadge.style.display = 'block'; }
-        if (violCountEl) violCountEl.textContent = warningCount;
-        if (warnCountEl) warnCountEl.textContent = warningCount;
-        if (warnMsgEl)   warnMsgEl.textContent   = message;
+        if (warnMsgEl)    warnMsgEl.textContent    = message;
         if (warnDetailEl) warnDetailEl.textContent = detail;
 
         if (warningCount >= MAX_WARNINGS) {
-            // Auto-submit on 3rd strike
-            warningModal.hide();
+            const m = getWarningModal();
+            if (m) m.hide();
             triggerAutoSubmit(`You have received ${MAX_WARNINGS} integrity violations. Exam auto-submitted.`);
             return;
         }
 
-        modalShowing = true;
-        warningModal.show();
+        const m = getWarningModal();
+        if (m) m.show();
     }
 
-    // Return to exam button — re-request fullscreen
+    // Return to exam button — close modal & re-enter fullscreen
     document.getElementById('returnToExamBtn').addEventListener('click', () => {
-        modalShowing = false;
-        warningModal.hide();
+        const m = getWarningModal();
+        if (m) m.hide();
         requestFullscreen();
     });
 
-    // ── Fullscreen API ────────────────────────────────────────────────────────
+    // ── Fullscreen API (Robust with User Gesture) ────────────────────────────
+    function isFullscreen() {
+        return !!(document.fullscreenElement
+            || document.webkitFullscreenElement
+            || document.mozFullScreenElement
+            || document.msFullscreenElement);
+    }
+
     function requestFullscreen() {
         const el = document.documentElement;
         try {
-            if      (el.requestFullscreen)       el.requestFullscreen();
+            if      (el.requestFullscreen)       el.requestFullscreen().catch(() => {});
             else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
             else if (el.mozRequestFullScreen)    el.mozRequestFullScreen();
+            else if (el.msRequestFullscreen)     el.msRequestFullscreen();
             fsRequested = true;
         } catch(e) {}
     }
 
-    function isFullscreen() {
-        return !!(document.fullscreenElement
-            || document.webkitFullscreenElement
-            || document.mozFullScreenElement);
+    const fsOverlay = document.getElementById('fullscreenOverlay');
+    const enterFsBtn = document.getElementById('enterFullscreenBtn');
+
+    if (enterFsBtn && fsOverlay) {
+        enterFsBtn.addEventListener('click', () => {
+            requestFullscreen();
+            fsOverlay.style.display = 'none';
+        });
     }
 
-    // Request fullscreen when exam page loads (with small delay for UX)
-    // Only start monitoring AFTER fullscreen is granted or denied
-    let fsReady = false; // true once we've attempted fullscreen + settled
-    window.addEventListener('load', () => {
-        setTimeout(() => {
-            requestFullscreen();
-            // Give browser 2s to settle fullscreen before monitoring starts
-            setTimeout(() => { fsReady = true; }, 2000);
-        }, 800);
-    });
+    // Show fullscreen prompt if not already in fullscreen on load
+    if (!isFullscreen() && fsOverlay) {
+        fsOverlay.style.display = 'flex';
+    }
 
-    // Detect fullscreen exit — only after fsReady so load doesn't trigger it
+    // Detect fullscreen exit
     ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(evt => {
         document.addEventListener(evt, () => {
-            if (!fsReady) return; // still initializing
-            if (!isFullscreen() && fsRequested && !isAutoSubmitting && !modalShowing) {
+            if (!isFullscreen() && fsRequested && !isAutoSubmitting) {
                 showWarning(
                     'fullscreen_exit',
-                    'You exited fullscreen mode.',
+                    'You exited fullscreen mode!',
                     'Fullscreen exited during exam. Please return to fullscreen.'
                 );
             }
         });
     });
 
-    // ── Tab-switch / Window blur detection ───────────────────────────────────
+    // ── Tab-switch & Window blur detection ───────────────────────────────────
     let blurCooldown = false;
-    let blurReady = false; // don't fire blur during page init or fullscreen request
-    setTimeout(() => { blurReady = true; }, 3000); // 3s grace after load
+    let blurReady = false;
+    setTimeout(() => { blurReady = true; }, 1500); // 1.5s grace after initial load
 
-    function onFocusLost() {
-        if (!blurReady || isAutoSubmitting || modalShowing || blurCooldown) return;
+    function onFocusLost(source) {
+        if (!blurReady || isAutoSubmitting || blurCooldown) return;
         blurCooldown = true;
-        setTimeout(() => { blurCooldown = false; }, 3000); // 3s cooldown between alerts
+        setTimeout(() => { blurCooldown = false; }, 1500); // 1.5s cooldown
         showWarning(
             'tab_switch',
             'You switched tabs or windows!',
-            'Tab/window focus lost during exam — this is recorded.'
+            `Focus lost (${source}) — switching away from the exam is recorded.`
         );
     }
 
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden) onFocusLost();
+        if (document.hidden) {
+            onFocusLost('tab switched or minimized');
+        }
     });
 
     window.addEventListener('blur', () => {
-        if (!document.hidden) onFocusLost(); // catches alt-tab without visibilitychange
+        onFocusLost('window lost focus');
+    });
+
+    // ── Prevent accidental tab closing (beforeunload) ────────────────────────
+    window.addEventListener('beforeunload', (e) => {
+        if (isAutoSubmitting) return;
+        logViolation('tab_switch', 'Closed exam tab or navigated away');
+        e.preventDefault();
+        e.returnValue = 'Are you sure you want to leave? Your exam progress will be affected.';
+        return e.returnValue;
     });
 
     // ── Block right-click ─────────────────────────────────────────────────────
