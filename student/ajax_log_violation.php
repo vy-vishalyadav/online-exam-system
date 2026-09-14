@@ -1,0 +1,63 @@
+<?php
+// AJAX endpoint: log anti-cheat violations during exam
+// Called by JS on tab-switch, fullscreen exit, blocked key press
+header('Content-Type: application/json');
+session_start();
+
+if (!isset($_SESSION['student_id'])) {
+    echo json_encode(['ok' => false, 'error' => 'not_authenticated']);
+    exit;
+}
+
+include '../config/db.php';
+
+$student_id = (int)$_SESSION['student_id'];
+$exam_id    = (int)($_POST['exam_id']         ?? 0);
+$type       = substr(trim($_POST['type']      ?? ''), 0, 50);
+$detail     = substr(trim($_POST['detail']    ?? ''), 0, 255);
+$csrf       = $_POST['csrf_token']             ?? '';
+
+if (!$exam_id || !$type) {
+    echo json_encode(['ok' => false, 'error' => 'invalid_params']);
+    exit;
+}
+
+if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf)) {
+    echo json_encode(['ok' => false, 'error' => 'csrf_invalid']);
+    exit;
+}
+
+// Get real IP
+$ip = $_SERVER['HTTP_X_FORWARDED_FOR']
+    ?? $_SERVER['HTTP_CLIENT_IP']
+    ?? $_SERVER['REMOTE_ADDR']
+    ?? '';
+$ip = substr(trim(explode(',', $ip)[0]), 0, 45);
+
+$ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500);
+
+$stmt = mysqli_prepare($conn,
+    "INSERT INTO exam_violations (student_id, exam_id, violation_type, detail, ip_address, user_agent)
+     VALUES (?, ?, ?, ?, ?, ?)");
+
+if (!$stmt) {
+    echo json_encode(['ok' => false, 'error' => 'db_error']);
+    exit;
+}
+
+mysqli_stmt_bind_param($stmt, "iissss", $student_id, $exam_id, $type, $detail, $ip, $ua);
+$ok = mysqli_stmt_execute($stmt);
+mysqli_stmt_close($stmt);
+
+// Return current violation count for this student+exam
+$cnt_stmt = mysqli_prepare($conn,
+    "SELECT COUNT(*) as cnt FROM exam_violations
+     WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit')");
+mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
+mysqli_stmt_execute($cnt_stmt);
+$cnt_res = mysqli_stmt_get_result($cnt_stmt);
+$cnt_row = mysqli_fetch_assoc($cnt_res);
+$count   = (int)($cnt_row['cnt'] ?? 0);
+mysqli_stmt_close($cnt_stmt);
+
+echo json_encode(['ok' => $ok, 'violation_count' => $count]);

@@ -96,6 +96,19 @@ function run_auto_migrations($conn) {
         saved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY uq_draft (student_id, exam_id, question_id)
     )");
+
+    // 9. exam_violations — anti-cheat audit log (tab-switch, fullscreen exit, blocked keys)
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS exam_violations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        exam_id INT NOT NULL,
+        violation_type VARCHAR(50) NOT NULL,
+        detail VARCHAR(255) NULL,
+        ip_address VARCHAR(45) NULL,
+        user_agent TEXT NULL,
+        occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_violations (student_id, exam_id)
+    )");
 }
 
 run_auto_migrations($conn);

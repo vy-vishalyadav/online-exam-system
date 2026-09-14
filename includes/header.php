@@ -132,7 +132,13 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                                 <i class="bi bi-bar-chart me-1"></i> Results
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link <?php echo ($current_page === 'violations.php') ? 'active' : ''; ?>" href="violations.php">
+                                <i class="bi bi-shield-exclamation me-1"></i> Violations
+                            </a>
+                        </li>
                     <?php elseif ($is_student): ?>
+
                         <li class="nav-item">
                             <a class="nav-link <?php echo ($current_page === 'dashboard.php') ? 'active' : ''; ?>" href="dashboard.php">
                                 <i class="bi bi-journal-check me-1"></i> My Exams

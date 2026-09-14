@@ -197,11 +197,52 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     </div>
 <?php else: ?>
 
+    <!-- Phase 2: Anti-Cheat Warning Modal -->
+    <div class="modal fade" id="warningModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-danger text-white border-0 py-3">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        Academic Integrity Warning
+                    </h5>
+                </div>
+                <div class="modal-body p-4 text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-eye-slash-fill text-danger" style="font-size:3rem;"></i>
+                    </div>
+                    <p class="fw-bold text-dark fs-5 mb-2" id="warningMessage">
+                        Suspicious activity detected.
+                    </p>
+                    <p class="text-muted mb-3" id="warningDetail"></p>
+                    <div class="alert alert-danger border-0 rounded-3 py-2 px-3">
+                        <strong>Warning <span id="warnCount">1</span> of <?php echo 3; ?></strong>
+                        — Exam will be auto-submitted on <strong>3rd violation</strong>.
+                    </div>
+                </div>
+                <div class="modal-footer border-0 justify-content-center pb-4">
+                    <button type="button" class="btn btn-danger px-5 fw-bold" id="returnToExamBtn">
+                        <i class="bi bi-arrow-return-left me-1"></i> Return to Exam
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Violation counter badge (top-left of sticky bar) -->
+    <div id="violationBadge" style="display:none;position:fixed;top:70px;right:16px;z-index:9999;">
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-2 shadow-sm small fw-semibold">
+            <i class="bi bi-shield-exclamation me-1"></i>
+            Warnings: <span id="violationCount">0</span>/3
+        </span>
+    </div>
+
     <form method="POST" action="result.php" id="examForm" onsubmit="return confirmSubmission();">
         <input type="hidden" name="exam_id"          value="<?php echo $exam_id; ?>">
         <input type="hidden" name="submit_exam"      value="1">
         <input type="hidden" name="csrf_token"       value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
         <input type="hidden" name="exam_submit_token" value="<?php echo htmlspecialchars($exam_submit_token); ?>">
+
 
         <?php foreach ($questions as $index => $q):
             $q_num   = $index + 1;
@@ -441,7 +482,183 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             })
             .catch(() => {}); // silently fail on network issues
     }, 30000);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 2 — Anti-Cheat & Integrity Controls
+    // ══════════════════════════════════════════════════════════════════════════
+    const MAX_WARNINGS   = 3;
+    const VIOLATION_URL  = 'ajax_log_violation.php';
+    let   warningCount   = 0;
+    let   modalShowing   = false;
+    let   fsRequested    = false;
+
+    const warningModal   = new bootstrap.Modal(document.getElementById('warningModal'), {backdrop:'static', keyboard:false});
+    const warnCountEl    = document.getElementById('warnCount');
+    const warnMsgEl      = document.getElementById('warningMessage');
+    const warnDetailEl   = document.getElementById('warningDetail');
+    const violBadge      = document.getElementById('violationBadge');
+    const violCountEl    = document.getElementById('violationCount');
+
+    // ── Log violation to server ───────────────────────────────────────────────
+    function logViolation(type, detail) {
+        const fd = new FormData();
+        fd.append('exam_id',    EXAM_ID);
+        fd.append('type',       type);
+        fd.append('detail',     detail);
+        fd.append('csrf_token', CSRF_TOKEN);
+        fetch(VIOLATION_URL, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (d.violation_count !== undefined) {
+                    warningCount = d.violation_count;
+                }
+            })
+            .catch(() => {});
+    }
+
+    // ── Show warning modal ────────────────────────────────────────────────────
+    function showWarning(type, message, detail) {
+        if (isAutoSubmitting) return;
+        warningCount++;
+        logViolation(type, detail);
+
+        // Update badge
+        if (violBadge) { violBadge.style.display = 'block'; }
+        if (violCountEl) violCountEl.textContent = warningCount;
+        if (warnCountEl) warnCountEl.textContent = warningCount;
+        if (warnMsgEl)   warnMsgEl.textContent   = message;
+        if (warnDetailEl) warnDetailEl.textContent = detail;
+
+        if (warningCount >= MAX_WARNINGS) {
+            // Auto-submit on 3rd strike
+            warningModal.hide();
+            triggerAutoSubmit(`You have received ${MAX_WARNINGS} integrity violations. Exam auto-submitted.`);
+            return;
+        }
+
+        modalShowing = true;
+        warningModal.show();
+    }
+
+    // Return to exam button — re-request fullscreen
+    document.getElementById('returnToExamBtn').addEventListener('click', () => {
+        modalShowing = false;
+        warningModal.hide();
+        requestFullscreen();
+    });
+
+    // ── Fullscreen API ────────────────────────────────────────────────────────
+    function requestFullscreen() {
+        const el = document.documentElement;
+        try {
+            if      (el.requestFullscreen)       el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            else if (el.mozRequestFullScreen)    el.mozRequestFullScreen();
+            fsRequested = true;
+        } catch(e) {}
+    }
+
+    function isFullscreen() {
+        return !!(document.fullscreenElement
+            || document.webkitFullscreenElement
+            || document.mozFullScreenElement);
+    }
+
+    // Request fullscreen when exam page loads (with small delay for UX)
+    window.addEventListener('load', () => {
+        setTimeout(requestFullscreen, 800);
+    });
+
+    // Detect fullscreen exit
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(evt => {
+        document.addEventListener(evt, () => {
+            if (!isFullscreen() && fsRequested && !isAutoSubmitting && !modalShowing) {
+                showWarning(
+                    'fullscreen_exit',
+                    'You exited fullscreen mode.',
+                    'Fullscreen exited during exam. Please return to fullscreen.'
+                );
+            }
+        });
+    });
+
+    // ── Tab-switch / Window blur detection ───────────────────────────────────
+    let blurCooldown = false;
+    function onFocusLost() {
+        if (isAutoSubmitting || modalShowing || blurCooldown) return;
+        blurCooldown = true;
+        setTimeout(() => { blurCooldown = false; }, 3000); // 3s cooldown between alerts
+        showWarning(
+            'tab_switch',
+            'You switched tabs or windows!',
+            'Tab/window focus lost during exam — this is recorded.'
+        );
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) onFocusLost();
+    });
+
+    window.addEventListener('blur', () => {
+        if (!document.hidden) onFocusLost(); // catches alt-tab without visibilitychange
+    });
+
+    // ── Block right-click ─────────────────────────────────────────────────────
+    document.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        logViolation('blocked_key', 'right-click context menu');
+    });
+
+    // ── Block dangerous keyboard shortcuts ────────────────────────────────────
+    const BLOCKED_KEYS = new Set([
+        'F12',                           // DevTools
+        'F5',                            // Refresh (during exam only)
+        'PrintScreen',                   // Screenshot
+    ]);
+    const BLOCKED_COMBOS = [
+        { ctrl: true,  shift: true,  key: 'I' },  // Ctrl+Shift+I (DevTools)
+        { ctrl: true,  shift: true,  key: 'J' },  // Ctrl+Shift+J (Console)
+        { ctrl: true,  shift: true,  key: 'C' },  // Ctrl+Shift+C (Inspect)
+        { ctrl: true,  shift: false, key: 'U' },  // Ctrl+U (View Source)
+        { ctrl: true,  shift: false, key: 'S' },  // Ctrl+S (Save page)
+        { ctrl: true,  shift: false, key: 'P' },  // Ctrl+P (Print)
+        { ctrl: true,  shift: false, key: 'A' },  // Ctrl+A (Select all)
+    ];
+
+    document.addEventListener('keydown', e => {
+        // Single blocked keys
+        if (BLOCKED_KEYS.has(e.key)) {
+            e.preventDefault();
+            logViolation('blocked_key', `${e.key} key blocked`);
+            return;
+        }
+        // Blocked combos
+        for (const combo of BLOCKED_COMBOS) {
+            if (e.ctrlKey === combo.ctrl
+                && e.shiftKey === combo.shift
+                && e.key.toUpperCase() === combo.key) {
+                e.preventDefault();
+                logViolation('blocked_key', `Ctrl+${combo.shift?'Shift+':''}${combo.key} blocked`);
+                return;
+            }
+        }
+    });
+
+    // ── Block copy / cut (allow paste for descriptive answers) ───────────────
+    document.addEventListener('copy',  e => {
+        // Allow copying inside descriptive textareas (they need to paste their own text)
+        if (e.target && e.target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        logViolation('blocked_key', 'copy (Ctrl+C) blocked');
+    });
+    document.addEventListener('cut', e => {
+        if (e.target && e.target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        logViolation('blocked_key', 'cut (Ctrl+X) blocked');
+    });
+
     </script>
+
 
 <?php endif; ?>
 
