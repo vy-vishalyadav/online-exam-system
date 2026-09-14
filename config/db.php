@@ -121,10 +121,18 @@ function run_auto_migrations($conn) {
         @mysqli_query($conn, "ALTER TABLE exams ADD COLUMN end_at   DATETIME NULL AFTER start_at");
     }
 
-    // 11. exam_sessions.time_taken_seconds — for "time taken" display in history
+    // 11. exam_sessions columns: time_taken_seconds, question_seed, duration_minutes
     $check = mysqli_query($conn, "SHOW COLUMNS FROM exam_sessions LIKE 'time_taken_seconds'");
     if ($check && mysqli_num_rows($check) === 0) {
         @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN time_taken_seconds INT NULL AFTER submitted");
+    }
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM exam_sessions LIKE 'question_seed'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN question_seed VARCHAR(64) NOT NULL DEFAULT '' AFTER duration_minutes");
+    }
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM exam_sessions LIKE 'duration_minutes'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30 AFTER started_at");
     }
 
     // 12. classes — admin-configurable class groups (FYIT, SYIT, TYIT, …)

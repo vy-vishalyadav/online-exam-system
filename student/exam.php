@@ -76,6 +76,8 @@ mysqli_stmt_execute($sess_check);
 $sess_row = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_check));
 mysqli_stmt_close($sess_check);
 
+$is_fresh_session = false;
+
 if (!$sess_row) {
     // First attempt — create session
     $ins = mysqli_prepare($conn,
@@ -84,6 +86,7 @@ if (!$sess_row) {
     mysqli_stmt_bind_param($ins, "iiis", $student_id, $exam_id, $duration, $seed_string);
     mysqli_stmt_execute($ins);
     mysqli_stmt_close($ins);
+    $is_fresh_session = true;
 } elseif ($sess_row['submitted']) {
     // Previous attempt was submitted — start a fresh session for retake
     // Reset core fields first (always works even if time_taken_seconds column is missing)
@@ -101,6 +104,7 @@ if (!$sess_row) {
     mysqli_stmt_bind_param($cdel, "ii", $student_id, $exam_id);
     mysqli_stmt_execute($cdel);
     mysqli_stmt_close($cdel);
+    $is_fresh_session = true;
 } else {
     // In-progress session (submitted=0) — check if it has already expired in MySQL's time
     $stale_elapsed = max(0, (int)($sess_row['elapsed_seconds'] ?? 0));
@@ -120,6 +124,7 @@ if (!$sess_row) {
         mysqli_stmt_bind_param($cdel2, "ii", $student_id, $exam_id);
         mysqli_stmt_execute($cdel2);
         mysqli_stmt_close($cdel2);
+        $is_fresh_session = true;
     }
     // else: genuinely in-progress and not yet expired — resume normally
 }
@@ -134,14 +139,26 @@ $session = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_stmt));
 mysqli_stmt_close($sess_stmt);
 
 // Calculate remaining seconds (server-authoritative via MySQL clock)
-$elapsed       = max(0, (int)($session['elapsed_seconds'] ?? 0));
-$total_seconds = (int)$session['duration_minutes'] * 60;
-$remaining_sec = max(0, $total_seconds - $elapsed);
+$dur_mins      = (int)($session['duration_minutes'] ?? 0);
+if ($dur_mins <= 0) $dur_mins = (int)$duration; // Fallback to exam duration
+$total_seconds = $dur_mins * 60;
 
-// If time already expired server-side, auto-submit via redirect
-if ($remaining_sec === 0) {
-    header("Location: result.php?timeout=1&exam_id={$exam_id}");
-    exit;
+if ($is_fresh_session) {
+    // Brand-new start or reset retake: guaranteed full duration
+    $remaining_sec = $total_seconds;
+} else {
+    $elapsed       = max(0, (int)($session['elapsed_seconds'] ?? 0));
+    $remaining_sec = max(0, $total_seconds - $elapsed);
+
+    // If genuinely expired mid-exam (with 5-second grace buffer), auto-submit via redirect
+    if ($remaining_sec === 0 && $elapsed >= ($total_seconds + 5)) {
+        header("Location: result.php?timeout=1&exam_id={$exam_id}");
+        exit;
+    }
+    // If between 0 and 5s grace, give at least 1s on render
+    if ($remaining_sec <= 0) {
+        $remaining_sec = 1;
+    }
 }
 
 // ── Fetch questions ──────────────────────────────────────────────────────────
