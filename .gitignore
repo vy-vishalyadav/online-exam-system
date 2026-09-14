@@ -16,3 +16,5 @@ error_log
 
 # Debug profile
 chrome-debug-profile/
+scratch/
+
