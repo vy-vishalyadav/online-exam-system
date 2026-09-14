@@ -65,39 +65,55 @@ if ($end_at && $now > $end_at) {
 $duration = (int)($exam['duration_minutes'] ?? 30);
 
 // ── Phase 1: Server-side timer & question-order seed ─────────────────────────
-// Create or resume exam session (UNIQUE on student_id+exam_id)
-$seed_string = md5($student_id . '_' . $exam_id . '_' . date('Ymd'));
+$seed_string = md5($student_id . '_' . $exam_id . '_' . date('Ymd') . '_' . time());
 
-$ins = mysqli_prepare($conn,
-    "INSERT IGNORE INTO exam_sessions (student_id, exam_id, started_at, duration_minutes, question_seed)
-     VALUES (?, ?, NOW(), ?, ?)");
-mysqli_stmt_bind_param($ins, "iiis", $student_id, $exam_id, $duration, $seed_string);
-mysqli_stmt_execute($ins);
-mysqli_stmt_close($ins);
+// Check if a session already exists for this student+exam
+$sess_check = mysqli_prepare($conn,
+    "SELECT id, submitted FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
+mysqli_stmt_bind_param($sess_check, "ii", $student_id, $exam_id);
+mysqli_stmt_execute($sess_check);
+$sess_row = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_check));
+mysqli_stmt_close($sess_check);
+
+if (!$sess_row) {
+    // First attempt — create session
+    $ins = mysqli_prepare($conn,
+        "INSERT INTO exam_sessions (student_id, exam_id, started_at, duration_minutes, question_seed, submitted)
+         VALUES (?, ?, NOW(), ?, ?, 0)");
+    mysqli_stmt_bind_param($ins, "iiis", $student_id, $exam_id, $duration, $seed_string);
+    mysqli_stmt_execute($ins);
+    mysqli_stmt_close($ins);
+} elseif ($sess_row['submitted']) {
+    // Previous attempt was submitted — start a fresh session for retake
+    $reset = mysqli_prepare($conn,
+        "UPDATE exam_sessions SET started_at=NOW(), duration_minutes=?, question_seed=?, submitted=0,
+         time_taken_seconds=NULL WHERE student_id=? AND exam_id=?");
+    mysqli_stmt_bind_param($reset, "isii", $duration, $seed_string, $student_id, $exam_id);
+    mysqli_stmt_execute($reset);
+    mysqli_stmt_close($reset);
+    // Clear old draft answers so retake starts clean
+    $cdel = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
+    mysqli_stmt_bind_param($cdel, "ii", $student_id, $exam_id);
+    mysqli_stmt_execute($cdel);
+    mysqli_stmt_close($cdel);
+}
+// else: in-progress session, resume it — no changes needed
 
 // Fetch session (guaranteed to exist now)
 $sess_stmt = mysqli_prepare($conn,
     "SELECT started_at, duration_minutes, question_seed, submitted
-     FROM exam_sessions WHERE student_id = ? AND exam_id = ? LIMIT 1");
+     FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
 mysqli_stmt_bind_param($sess_stmt, "ii", $student_id, $exam_id);
 mysqli_stmt_execute($sess_stmt);
-$sess_res = mysqli_stmt_get_result($sess_stmt);
-$session  = mysqli_fetch_assoc($sess_res);
+$session = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_stmt));
 mysqli_stmt_close($sess_stmt);
-
-// If already submitted, send back to dashboard
-if ($session['submitted']) {
-    $_SESSION['flash_already_submitted'] = "You have already submitted this exam.";
-    header("Location: result.php");
-    exit;
-}
 
 // Calculate remaining seconds (server-authoritative)
 $elapsed       = (int)(time() - strtotime($session['started_at']));
 $total_seconds = (int)$session['duration_minutes'] * 60;
 $remaining_sec = max(0, $total_seconds - $elapsed);
 
-// If time already expired server-side, redirect
+// If time already expired server-side, auto-submit via redirect
 if ($remaining_sec === 0) {
     header("Location: result.php?timeout=1&exam_id={$exam_id}");
     exit;
@@ -594,13 +610,20 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     }
 
     // Request fullscreen when exam page loads (with small delay for UX)
+    // Only start monitoring AFTER fullscreen is granted or denied
+    let fsReady = false; // true once we've attempted fullscreen + settled
     window.addEventListener('load', () => {
-        setTimeout(requestFullscreen, 800);
+        setTimeout(() => {
+            requestFullscreen();
+            // Give browser 2s to settle fullscreen before monitoring starts
+            setTimeout(() => { fsReady = true; }, 2000);
+        }, 800);
     });
 
-    // Detect fullscreen exit
+    // Detect fullscreen exit — only after fsReady so load doesn't trigger it
     ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(evt => {
         document.addEventListener(evt, () => {
+            if (!fsReady) return; // still initializing
             if (!isFullscreen() && fsRequested && !isAutoSubmitting && !modalShowing) {
                 showWarning(
                     'fullscreen_exit',
@@ -613,8 +636,11 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
 
     // ── Tab-switch / Window blur detection ───────────────────────────────────
     let blurCooldown = false;
+    let blurReady = false; // don't fire blur during page init or fullscreen request
+    setTimeout(() => { blurReady = true; }, 3000); // 3s grace after load
+
     function onFocusLost() {
-        if (isAutoSubmitting || modalShowing || blurCooldown) return;
+        if (!blurReady || isAutoSubmitting || modalShowing || blurCooldown) return;
         blurCooldown = true;
         setTimeout(() => { blurCooldown = false; }, 3000); // 3s cooldown between alerts
         showWarning(
