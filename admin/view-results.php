@@ -113,6 +113,13 @@ if (!empty($_SESSION['flash_error'])) {
 // ── Search & Filter ───────────────────────────────────────────────────────────
 $search        = trim($_GET['search'] ?? '');
 $status_filter = trim($_GET['status'] ?? '');
+$class_filter  = (int)($_GET['class_id'] ?? 0);
+$student_filter = (int)($_GET['student_id'] ?? 0);
+
+// Fetch classes for dropdown
+$classes_res = mysqli_query($conn, "SELECT * FROM classes ORDER BY sort_order, name");
+$all_classes = [];
+while ($row = mysqli_fetch_assoc($classes_res)) $all_classes[] = $row;
 
 // Build WHERE using prepared-style binding via SQL
 $where_clauses = [];
@@ -120,7 +127,6 @@ $bind_types    = "";
 $bind_params   = [];
 
 if (!empty($search)) {
-    // Escape LIKE special characters so they are treated literally
     $escaped_search = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
     $like_val = "%" . $escaped_search . "%";
     $where_clauses[] = "(s.name LIKE ? OR s.email LIKE ? OR e.title LIKE ?)";
@@ -134,13 +140,25 @@ if (!empty($status_filter) && in_array($status_filter, ['pending', 'published'])
     $bind_types .= "s";
     $bind_params[] = &$status_filter;
 }
+if ($class_filter > 0) {
+    $where_clauses[] = "s.class_id = ?";
+    $bind_types .= "i";
+    $bind_params[] = &$class_filter;
+}
+if ($student_filter > 0) {
+    $where_clauses[] = "r.student_id = ?";
+    $bind_types .= "i";
+    $bind_params[] = &$student_filter;
+}
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
-$sql = "SELECT r.*, s.name AS student_name, s.email, e.title AS exam_title,
+$sql = "SELECT r.*, s.name AS student_name, s.email, c.name AS class_name,
+         e.title AS exam_title,
          (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS total_q,
          (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_q_count
          FROM results r
          JOIN students s ON r.student_id = s.id
+         LEFT JOIN classes c ON s.class_id = c.id
          JOIN exams e ON r.exam_id = e.id
          $where_sql
          ORDER BY r.attempted_at DESC";
@@ -253,22 +271,32 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
 <div class="card shadow-sm mb-4 border-0 rounded-3">
     <div class="card-body py-3">
         <form method="GET" action="view-results.php" class="row align-items-center g-2">
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <div class="input-group">
                     <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="search" class="form-control" placeholder="Search by student name, ID or exam..." value="<?php echo htmlspecialchars($search); ?>" maxlength="100">
+                    <input type="text" name="search" class="form-control" placeholder="Search student, ID or exam..." value="<?php echo htmlspecialchars($search); ?>" maxlength="100">
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <select name="class_id" class="form-select">
+                    <option value="">All Classes</option>
+                    <?php foreach ($all_classes as $cl): ?>
+                    <option value="<?php echo $cl['id']; ?>" <?php echo ($class_filter == $cl['id']) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($cl['name']); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <select name="status" class="form-select">
-                    <option value="">-- All Statuses --</option>
-                    <option value="pending" <?php echo ($status_filter === 'pending') ? 'selected' : ''; ?>>⏳ Pending Review Only</option>
-                    <option value="published" <?php echo ($status_filter === 'published') ? 'selected' : ''; ?>>✅ Published Only</option>
+                    <option value="">All Statuses</option>
+                    <option value="pending" <?php echo ($status_filter === 'pending') ? 'selected' : ''; ?>>⏳ Pending Review</option>
+                    <option value="published" <?php echo ($status_filter === 'published') ? 'selected' : ''; ?>>✅ Published</option>
                 </select>
             </div>
             <div class="col-auto">
                 <button type="submit" class="btn btn-primary fw-semibold">Filter</button>
-                <?php if (!empty($search) || !empty($status_filter)): ?>
+                <?php if (!empty($search) || !empty($status_filter) || $class_filter || $student_filter): ?>
                     <a href="view-results.php" class="btn btn-link text-decoration-none ms-2">Reset</a>
                 <?php endif; ?>
             </div>
@@ -285,6 +313,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                     <tr>
                         <th class="ps-4">#</th>
                         <th>Student</th>
+                        <th>Class</th>
                         <th>Student ID</th>
                         <th>Exam Title</th>
                         <th>Score</th>
@@ -304,7 +333,21 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                     ?>
                         <tr>
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
-                            <td><strong class="text-dark"><?php echo htmlspecialchars($r['student_name']); ?></strong></td>
+                            <td>
+                                <a href="student-profile.php?id=<?php echo $r['student_id']; ?>" class="fw-bold text-dark text-decoration-none">
+                                    <?php echo htmlspecialchars($r['student_name']); ?>
+                                    <i class="bi bi-box-arrow-up-right ms-1 small text-muted"></i>
+                                </a>
+                            </td>
+                            <td>
+                                <?php if (!empty($r['class_name'])): ?>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+                                        <?php echo htmlspecialchars($r['class_name']); ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span class="text-muted small">—</span>
+                                <?php endif; ?>
+                            </td>
                             <td><span class="badge bg-light text-dark border font-monospace"><i class="bi bi-person-badge me-1 text-primary"></i><?php echo htmlspecialchars($r['email']); ?></span></td>
                             <td>
                                 <?php echo htmlspecialchars($r['exam_title']); ?>

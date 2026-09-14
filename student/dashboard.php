@@ -9,19 +9,45 @@ if (!isset($_SESSION['student_id'])) {
 
 $student_id = (int)$_SESSION['student_id'];
 
-// Fetch all exams with question count & student's highest score / latest attempt
-$query = "SELECT e.*, 
+// Fetch student's current class
+$scr = mysqli_prepare($conn, "SELECT s.class_id, c.name AS class_name FROM students s LEFT JOIN classes c ON s.class_id=c.id WHERE s.id=?");
+mysqli_stmt_bind_param($scr, "i", $student_id);
+mysqli_stmt_execute($scr);
+$scrow = mysqli_fetch_assoc(mysqli_stmt_get_result($scr));
+mysqli_stmt_close($scr);
+$student_class_id   = (int)($scrow['class_id'] ?? 0);
+$student_class_name = $scrow['class_name'] ?? null;
+
+// Fetch exams visible to this student:
+// - Exams with NO class assignment (visible to everyone), OR
+// - Exams assigned to this student's class
+$query = "SELECT e.*,
             (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
-            (SELECT score FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
+            (SELECT score  FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
             (SELECT status FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
             (SELECT COUNT(*) FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id) AS attempt_count
-          FROM exams e 
+          FROM exams e
+          WHERE (
+              NOT EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id)
+              " . ($student_class_id ? "OR EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id AND eca.class_id = $student_class_id)" : "") . "
+          )
           ORDER BY e.id DESC";
 $exams = mysqli_query($conn, $query);
 ?>
 
 <div class="mb-4">
-    <h3 class="fw-extrabold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_name']); ?>! 👋</h3>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h3 class="fw-extrabold mb-0">Welcome, <?php echo htmlspecialchars($_SESSION['student_name']); ?>! 👋</h3>
+        <?php if ($student_class_name): ?>
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-2 fw-bold fs-6">
+                <i class="bi bi-diagram-3 me-1"></i><?php echo htmlspecialchars($student_class_name); ?>
+            </span>
+        <?php else: ?>
+            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-3 py-2 small">
+                <i class="bi bi-person-dash me-1"></i>No class assigned
+            </span>
+        <?php endif; ?>
+    </div>
     <p class="text-muted mb-0">Select an exam below to begin. Read each question carefully. Good luck!</p>
 </div>
 

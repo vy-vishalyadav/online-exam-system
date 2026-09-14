@@ -21,9 +21,10 @@ if ($filter_exam)    { $where[] = 'v.exam_id=?';    $params[] = $filter_exam;   
 if ($filter_student) { $where[] = 'v.student_id=?'; $params[] = $filter_student; $types .= 'i'; }
 if ($filter_type)    { $where[] = 'v.violation_type=?'; $params[] = $filter_type; $types .= 's'; }
 
-$sql = "SELECT v.*, s.name AS student_name, s.email AS student_email, e.title AS exam_title
+$sql = "SELECT v.*, s.name AS student_name, s.email AS student_email, c.name AS class_name, e.title AS exam_title
         FROM exam_violations v
         JOIN students s ON v.student_id = s.id
+        LEFT JOIN classes c ON s.class_id = c.id
         JOIN exams e    ON v.exam_id    = e.id"
     . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
     . " ORDER BY v.occurred_at DESC LIMIT 500";
@@ -198,8 +199,16 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                         <tr>
                             <td class="ps-4 text-muted"><?php echo $i++; ?></td>
                             <td>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($v['student_name']); ?></div>
-                                <small class="text-muted"><?php echo htmlspecialchars($v['student_email']); ?></small>
+                                <a href="student-profile.php?id=<?php echo $v['student_id']; ?>" class="fw-semibold text-dark text-decoration-none">
+                                    <?php echo htmlspecialchars($v['student_name']); ?>
+                                    <i class="bi bi-box-arrow-up-right ms-1 small text-muted"></i>
+                                </a>
+                                <?php if (!empty($v['class_name'])): ?>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0 ms-1 small">
+                                        <?php echo htmlspecialchars($v['class_name']); ?>
+                                    </span>
+                                <?php endif; ?>
+                                <br><small class="text-muted"><?php echo htmlspecialchars($v['student_email']); ?></small>
                             </td>
                             <td><?php echo htmlspecialchars($v['exam_title']); ?></td>
                             <td>

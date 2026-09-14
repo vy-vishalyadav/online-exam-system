@@ -122,6 +122,34 @@ function run_auto_migrations($conn) {
     if ($check && mysqli_num_rows($check) === 0) {
         @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN time_taken_seconds INT NULL AFTER submitted");
     }
+
+    // 12. classes — admin-configurable class groups (FYIT, SYIT, TYIT, …)
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS classes (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        name        VARCHAR(50)  NOT NULL,
+        description VARCHAR(200) NULL,
+        sort_order  INT          NOT NULL DEFAULT 0,
+        created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_class_name (name)
+    )");
+    // Seed default classes — INSERT IGNORE is idempotent
+    @mysqli_query($conn, "INSERT IGNORE INTO classes (name, description, sort_order) VALUES
+        ('FYIT', 'First Year Information Technology', 1),
+        ('SYIT', 'Second Year Information Technology', 2),
+        ('TYIT', 'Third Year Information Technology', 3)");
+
+    // 13. students.class_id — foreign key to classes
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM students LIKE 'class_id'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE students ADD COLUMN class_id INT NULL AFTER name");
+    }
+
+    // 14. exam_class_assignments — many-to-many: exam ↔ class
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS exam_class_assignments (
+        exam_id  INT NOT NULL,
+        class_id INT NOT NULL,
+        PRIMARY KEY (exam_id, class_id)
+    )");
 }
 
 run_auto_migrations($conn);

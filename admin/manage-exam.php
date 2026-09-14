@@ -47,9 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
         $result_mode = ($_POST['result_mode'] ?? 'instant') === 'pending' ? 'pending' : 'instant';
         $start_at    = trim($_POST['start_at'] ?? '');
         $end_at      = trim($_POST['end_at']   ?? '');
-        // Convert empty strings to null; validate datetime format
-        $start_at = ($start_at !== '') ? date('Y-m-d H:i:s', strtotime($start_at)) : null;
-        $end_at   = ($end_at   !== '') ? date('Y-m-d H:i:s', strtotime($end_at))   : null;
+        $start_at    = ($start_at !== '') ? date('Y-m-d H:i:s', strtotime($start_at)) : null;
+        $end_at      = ($end_at   !== '') ? date('Y-m-d H:i:s', strtotime($end_at))   : null;
+        $class_ids   = array_map('intval', $_POST['class_ids'] ?? []);
 
         if (empty($title)) {
             $error = "Exam Title is required.";
@@ -64,10 +64,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
             if ($stmt) {
                 mysqli_stmt_bind_param($stmt, "sisss", $title, $duration, $result_mode, $start_at, $end_at);
                 if (mysqli_stmt_execute($stmt)) {
+                    $new_exam_id = mysqli_insert_id($conn);
                     mysqli_stmt_close($stmt);
+                    // Save class assignments
+                    foreach ($class_ids as $cid) {
+                        if ($cid > 0) {
+                            $ca = mysqli_prepare($conn, "INSERT IGNORE INTO exam_class_assignments (exam_id, class_id) VALUES (?,?)");
+                            mysqli_stmt_bind_param($ca, "ii", $new_exam_id, $cid);
+                            mysqli_stmt_execute($ca);
+                            mysqli_stmt_close($ca);
+                        }
+                    }
                     $_SESSION['flash_success'] = "Exam '" . htmlspecialchars($title) . "' added successfully!";
-                    header("Location: manage-exam.php");
-                    exit;
+                    header("Location: manage-exam.php"); exit;
                 } else {
                     $error = "Error adding exam: " . mysqli_error($conn);
                     mysqli_stmt_close($stmt);
@@ -90,8 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
         $result_mode = ($_POST['result_mode'] ?? 'instant') === 'pending' ? 'pending' : 'instant';
         $start_at    = trim($_POST['start_at'] ?? '');
         $end_at      = trim($_POST['end_at']   ?? '');
-        $start_at = ($start_at !== '') ? date('Y-m-d H:i:s', strtotime($start_at)) : null;
-        $end_at   = ($end_at   !== '') ? date('Y-m-d H:i:s', strtotime($end_at))   : null;
+        $start_at    = ($start_at !== '') ? date('Y-m-d H:i:s', strtotime($start_at)) : null;
+        $end_at      = ($end_at   !== '') ? date('Y-m-d H:i:s', strtotime($end_at))   : null;
+        $class_ids   = array_map('intval', $_POST['class_ids'] ?? []);
 
         if (empty($title)) {
             $error = "Exam Title is required.";
@@ -107,9 +117,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
                 mysqli_stmt_bind_param($stmt, "sisssi", $title, $duration, $result_mode, $start_at, $end_at, $exam_id);
                 if (mysqli_stmt_execute($stmt)) {
                     mysqli_stmt_close($stmt);
+                    // Replace class assignments: delete old, insert new
+                    $del = mysqli_prepare($conn, "DELETE FROM exam_class_assignments WHERE exam_id=?");
+                    mysqli_stmt_bind_param($del, "i", $exam_id);
+                    mysqli_stmt_execute($del);
+                    mysqli_stmt_close($del);
+                    foreach ($class_ids as $cid) {
+                        if ($cid > 0) {
+                            $ca = mysqli_prepare($conn, "INSERT IGNORE INTO exam_class_assignments (exam_id, class_id) VALUES (?,?)");
+                            mysqli_stmt_bind_param($ca, "ii", $exam_id, $cid);
+                            mysqli_stmt_execute($ca);
+                            mysqli_stmt_close($ca);
+                        }
+                    }
                     $_SESSION['flash_success'] = "Exam updated successfully!";
-                    header("Location: manage-exam.php");
-                    exit;
+                    header("Location: manage-exam.php"); exit;
                 } else {
                     $error = "Error updating exam: " . mysqli_error($conn);
                     mysqli_stmt_close($stmt);
@@ -122,20 +144,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
 }
 
 // Flash messages
-if (!empty($_SESSION['flash_success'])) {
-    $success = $_SESSION['flash_success'];
-    unset($_SESSION['flash_success']);
-}
-if (!empty($_SESSION['flash_error'])) {
-    $error = $_SESSION['flash_error'];
-    unset($_SESSION['flash_error']);
-}
+if (!empty($_SESSION['flash_success'])) { $success = $_SESSION['flash_success']; unset($_SESSION['flash_success']); }
+if (!empty($_SESSION['flash_error']))   { $error   = $_SESSION['flash_error'];   unset($_SESSION['flash_error']); }
 
-// Fetch all exams with question counts & descriptive question counts
-$exams = mysqli_query($conn, "SELECT e.*, 
-                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
-                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_count
-                              FROM exams e ORDER BY e.id DESC");
+// Fetch all classes for checkboxes
+$classes_res = mysqli_query($conn, "SELECT * FROM classes ORDER BY sort_order, name");
+$all_classes = [];
+while ($row = mysqli_fetch_assoc($classes_res)) $all_classes[] = $row;
+
+// Fetch exams with question counts and assigned classes
+$exams = mysqli_query($conn, "SELECT e.*,
+    (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
+    (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_count,
+    (SELECT GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR ', ')
+     FROM exam_class_assignments eca JOIN classes c ON c.id=eca.class_id
+     WHERE eca.exam_id = e.id) AS assigned_classes,
+    (SELECT GROUP_CONCAT(eca2.class_id SEPARATOR ',')
+     FROM exam_class_assignments eca2 WHERE eca2.exam_id = e.id) AS assigned_class_ids
+    FROM exams e ORDER BY e.id DESC");
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -177,6 +203,7 @@ $exams = mysqli_query($conn, "SELECT e.*,
                         <th>Exam Title</th>
                         <th>Duration</th>
                         <th>Schedule</th>
+                        <th>Assigned To</th>
                         <th>Questions</th>
                         <th>Result Mode</th>
                         <th class="text-center pe-4">Actions</th>
@@ -189,6 +216,7 @@ $exams = mysqli_query($conn, "SELECT e.*,
                         while ($e = mysqli_fetch_assoc($exams)):
                             $has_desc = ((int)($e['desc_count'] ?? 0)) > 0;
                             $mode = $e['result_mode'] ?? 'instant';
+                            $assigned_ids = $e['assigned_class_ids'] ? array_map('intval', explode(',', $e['assigned_class_ids'])) : [];
                     ?>
                         <tr>
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
@@ -196,21 +224,31 @@ $exams = mysqli_query($conn, "SELECT e.*,
                             <td><span class="badge bg-light text-dark border"><i class="bi bi-clock me-1"></i><?php echo (int)$e['duration_minutes']; ?> mins</span></td>
                             <td>
                                 <?php
-                                $now      = time();
-                                $s_at     = $e['start_at'] ? strtotime($e['start_at']) : null;
-                                $e_at     = $e['end_at']   ? strtotime($e['end_at'])   : null;
+                                $now  = time();
+                                $s_at = $e['start_at'] ? strtotime($e['start_at']) : null;
+                                $e_at = $e['end_at']   ? strtotime($e['end_at'])   : null;
                                 if ($s_at && $e_at) {
-                                    if ($now < $s_at) {
+                                    if ($now < $s_at)
                                         echo '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, H:i', $s_at) . '</span>';
-                                    } elseif ($now >= $s_at && $now <= $e_at) {
+                                    elseif ($now >= $s_at && $now <= $e_at)
                                         echo '<span class="badge bg-success rounded-pill px-2 py-1"><i class="bi bi-broadcast me-1"></i>LIVE until ' . date('H:i', $e_at) . '</span>';
-                                    } else {
+                                    else
                                         echo '<span class="badge bg-secondary rounded-pill px-2 py-1"><i class="bi bi-lock me-1"></i>Ended ' . date('d M', $e_at) . '</span>';
-                                    }
                                 } else {
                                     echo '<span class="text-muted small">Always open</span>';
                                 }
                                 ?>
+                            </td>
+                            <td>
+                                <?php if (!empty($e['assigned_classes'])): ?>
+                                    <?php foreach (explode(', ', $e['assigned_classes']) as $cn): ?>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 me-1">
+                                            <?php echo htmlspecialchars(trim($cn)); ?>
+                                        </span>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <span class="text-muted small"><i class="bi bi-globe me-1"></i>All students</span>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <a href="manage-questions.php?exam_id=<?php echo $e['id']; ?>" class="text-decoration-none">
@@ -305,6 +343,22 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                                             <div class="form-text">Students locked out after this</div>
                                                         </div>
                                                     </div>
+                                                    <hr class="my-3">
+                                                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
+                                                    <div class="d-flex flex-wrap gap-2">
+                                                        <?php foreach ($all_classes as $cl): ?>
+                                                        <div class="form-check form-check-inline">
+                                                            <input class="form-check-input" type="checkbox" name="class_ids[]"
+                                                                id="ec<?php echo $e['id']; ?>_c<?php echo $cl['id']; ?>"
+                                                                value="<?php echo $cl['id']; ?>"
+                                                                <?php echo in_array($cl['id'], $assigned_ids) ? 'checked' : ''; ?>>
+                                                            <label class="form-check-label fw-semibold" for="ec<?php echo $e['id']; ?>_c<?php echo $cl['id']; ?>">
+                                                                <?php echo htmlspecialchars($cl['name']); ?>
+                                                            </label>
+                                                        </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div class="form-text mt-1"><i class="bi bi-globe me-1"></i>Leave all unchecked = visible to <strong>all students</strong>.</div>
                                                 </div>
                                                 <div class="modal-footer bg-light">
                                                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -377,6 +431,20 @@ $exams = mysqli_query($conn, "SELECT e.*,
                             <div class="form-text">Students locked out after this</div>
                         </div>
                     </div>
+                    <hr class="my-3">
+                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
+                    <div class="d-flex flex-wrap gap-3">
+                        <?php foreach ($all_classes as $cl): ?>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="class_ids[]"
+                                id="add_c<?php echo $cl['id']; ?>" value="<?php echo $cl['id']; ?>">
+                            <label class="form-check-label fw-semibold" for="add_c<?php echo $cl['id']; ?>">
+                                <?php echo htmlspecialchars($cl['name']); ?>
+                            </label>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="form-text mt-1"><i class="bi bi-globe me-1"></i>Leave all unchecked = visible to <strong>all students</strong>.</div>
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

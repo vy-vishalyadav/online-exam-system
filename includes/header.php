@@ -128,6 +128,11 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link <?php echo ($current_page === 'manage-classes.php') ? 'active' : ''; ?>" href="manage-classes.php">
+                                <i class="bi bi-diagram-3 me-1"></i> Classes
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link <?php echo ($current_page === 'view-results.php') ? 'active' : ''; ?>" href="view-results.php">
                                 <i class="bi bi-bar-chart me-1"></i> Results
                             </a>
