@@ -290,7 +290,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                 unset($_SESSION['option_maps_' . $to_exam_id]);
 
                 $status_to = ($desc_c > 0 || ($to_exam['result_mode'] ?? 'instant') === 'pending') ? 'pending' : 'published';
-                $score_to  = $total_q > 0 ? round(($correct_c / $total_q) * 100) : 0;
+                // Score = correct MCQs ÷ total MCQs × 100 (matches POST handler formula at line 164)
+                // Descriptive questions are graded later by admin and must not dilute the MCQ score
+                $score_to  = $mcq_c > 0 ? round(($correct_c / $mcq_c) * 100) : 0;
 
                 $ins_r = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?,?,?,?,NOW())");
                 mysqli_stmt_bind_param($ins_r, "iiis", $student_id, $to_exam_id, $score_to, $status_to);

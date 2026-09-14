@@ -100,8 +100,32 @@ if (!$sess_row) {
     mysqli_stmt_bind_param($cdel, "ii", $student_id, $exam_id);
     mysqli_stmt_execute($cdel);
     mysqli_stmt_close($cdel);
+} else {
+    // In-progress session (submitted=0) — check if it has already expired.
+    // This happens when a student started an exam in a previous visit but never
+    // submitted it, so started_at is stale and elapsed > duration.
+    // Without this check, remaining_sec would be 0 and exam.php would immediately
+    // redirect to result.php showing 0% — the auto-submit bug.
+    $stale_elapsed  = (int)(time() - strtotime($sess_row['started_at']));
+    $stale_total    = (int)$duration * 60;
+    if ($stale_elapsed >= $stale_total) {
+        // Session has expired without being submitted — treat as a fresh start
+        $reset_stale = mysqli_prepare($conn,
+            "UPDATE exam_sessions SET started_at=NOW(), duration_minutes=?, question_seed=?, submitted=0
+             WHERE student_id=? AND exam_id=?");
+        mysqli_stmt_bind_param($reset_stale, "isii", $duration, $seed_string, $student_id, $exam_id);
+        mysqli_stmt_execute($reset_stale);
+        mysqli_stmt_close($reset_stale);
+        @mysqli_query($conn, "UPDATE exam_sessions SET time_taken_seconds=NULL
+                              WHERE student_id=$student_id AND exam_id=$exam_id");
+        // Clear stale draft answers so the fresh attempt starts clean
+        $cdel2 = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
+        mysqli_stmt_bind_param($cdel2, "ii", $student_id, $exam_id);
+        mysqli_stmt_execute($cdel2);
+        mysqli_stmt_close($cdel2);
+    }
+    // else: genuinely in-progress and not yet expired — resume normally
 }
-// else: in-progress session, resume it — no changes needed
 
 // Fetch session (guaranteed to exist now)
 $sess_stmt = mysqli_prepare($conn,
