@@ -85,12 +85,16 @@ if (!$sess_row) {
     mysqli_stmt_close($ins);
 } elseif ($sess_row['submitted']) {
     // Previous attempt was submitted — start a fresh session for retake
+    // Reset core fields first (always works even if time_taken_seconds column is missing)
     $reset = mysqli_prepare($conn,
-        "UPDATE exam_sessions SET started_at=NOW(), duration_minutes=?, question_seed=?, submitted=0,
-         time_taken_seconds=NULL WHERE student_id=? AND exam_id=?");
+        "UPDATE exam_sessions SET started_at=NOW(), duration_minutes=?, question_seed=?, submitted=0
+         WHERE student_id=? AND exam_id=?");
     mysqli_stmt_bind_param($reset, "isii", $duration, $seed_string, $student_id, $exam_id);
     mysqli_stmt_execute($reset);
     mysqli_stmt_close($reset);
+    // Reset time_taken_seconds separately — silently ignored if column doesn't exist yet
+    @mysqli_query($conn, "UPDATE exam_sessions SET time_taken_seconds=NULL
+                          WHERE student_id=$student_id AND exam_id=$exam_id");
     // Clear old draft answers so retake starts clean
     $cdel = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
     mysqli_stmt_bind_param($cdel, "ii", $student_id, $exam_id);
