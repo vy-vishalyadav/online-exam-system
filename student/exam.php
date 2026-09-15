@@ -154,6 +154,16 @@ if ($is_fresh_session) {
     @mysqli_query($conn, "DELETE FROM exam_violations WHERE student_id=$student_id AND exam_id=$exam_id");
     $initial_violations = 0;
 } else {
+    // Deduplicate any rapid double-logged records for this session (e.g. from network retries or parallel sendBeacon/fetch)
+    @mysqli_query($conn,
+        "DELETE v1 FROM exam_violations v1
+         INNER JOIN exam_violations v2
+         WHERE v1.id > v2.id
+           AND v1.student_id = $student_id
+           AND v1.exam_id = $exam_id
+           AND v1.violation_type = v2.violation_type
+           AND TIMESTAMPDIFF(SECOND, v2.occurred_at, v1.occurred_at) <= 3");
+
     $v_stmt = mysqli_prepare($conn,
         "SELECT COUNT(*) AS v_count FROM exam_violations 
          WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit')");
@@ -602,16 +612,25 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 fd.append('detail',     'Voluntarily exited exam to dashboard before submitting');
                 fd.append('csrf_token', CSRF_TOKEN);
 
+                let beaconQueued = false;
                 if (navigator.sendBeacon) {
-                    navigator.sendBeacon(VIOLATION_URL, fd);
+                    beaconQueued = navigator.sendBeacon(VIOLATION_URL, fd);
                 }
-                fetch(VIOLATION_URL, { method: 'POST', body: fd, keepalive: true }).finally(() => {
-                    window.location.href = pendingExitHref;
-                });
-                // Safety redirect in case network hangs
-                setTimeout(() => {
-                    window.location.href = pendingExitHref;
-                }, 350);
+
+                if (beaconQueued) {
+                    // Queued successfully by browser background beacon
+                    setTimeout(() => {
+                        window.location.href = pendingExitHref;
+                    }, 150);
+                } else {
+                    // Fallback to fetch if sendBeacon is unsupported or declined
+                    fetch(VIOLATION_URL, { method: 'POST', body: fd, keepalive: true }).finally(() => {
+                        window.location.href = pendingExitHref;
+                    });
+                    setTimeout(() => {
+                        window.location.href = pendingExitHref;
+                    }, 350);
+                }
             });
         }
 
@@ -817,7 +836,6 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     const MAX_WARNINGS   = 3;
     const VIOLATION_URL  = 'ajax_log_violation.php';
     let   warningCount   = <?php echo (int)$initial_violations; ?>;
-    let   fsRequested    = false;
     let   warningModalInstance = null;
 
     function getWarningModal() {
@@ -896,14 +914,12 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         if (m) m.show();
     }
 
-    // Return to exam button — close modal & re-enter fullscreen
-    document.getElementById('returnToExamBtn').addEventListener('click', () => {
-        const m = getWarningModal();
-        if (m) m.hide();
-        requestFullscreen();
-    });
+    // ── Fullscreen API (Robust with User Gesture & Transition Guard) ─────────
+    let isInExamFullscreen = false;
+    let isFsTransitioning  = false;
+    let blurReady          = false;
+    let blurCooldown       = false;
 
-    // ── Fullscreen API (Robust with User Gesture) ────────────────────────────
     function isFullscreen() {
         return !!(document.fullscreenElement
             || document.webkitFullscreenElement
@@ -911,18 +927,40 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             || document.msFullscreenElement);
     }
 
+    function beginFullscreenTransition() {
+        isFsTransitioning = true;
+        blurReady = false;
+        // Suppress blur/focus events for 2.5s while browser switches fullscreen mode and shows banner
+        setTimeout(() => {
+            isFsTransitioning = false;
+            if (isFullscreen()) {
+                isInExamFullscreen = true;
+                setTimeout(() => {
+                    if (isInExamFullscreen) blurReady = true;
+                }, 1000);
+            }
+        }, 2500);
+    }
+
     function requestFullscreen() {
         const el = document.documentElement;
+        beginFullscreenTransition();
         try {
             if      (el.requestFullscreen)       el.requestFullscreen().catch(() => {});
             else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
             else if (el.mozRequestFullScreen)    el.mozRequestFullScreen();
             else if (el.msRequestFullscreen)     el.msRequestFullscreen();
-            fsRequested = true;
         } catch(e) {}
     }
 
-    const fsOverlay = document.getElementById('fullscreenOverlay');
+    // Return to exam button — close modal & re-enter fullscreen
+    document.getElementById('returnToExamBtn').addEventListener('click', () => {
+        const m = getWarningModal();
+        if (m) m.hide();
+        requestFullscreen();
+    });
+
+    const fsOverlay  = document.getElementById('fullscreenOverlay');
     const enterFsBtn = document.getElementById('enterFullscreenBtn');
 
     if (enterFsBtn && fsOverlay) {
@@ -935,30 +973,38 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     // Show fullscreen prompt if not already in fullscreen on load
     if (!isFullscreen() && fsOverlay) {
         fsOverlay.style.display = 'flex';
+    } else if (isFullscreen()) {
+        isInExamFullscreen = true;
+        setTimeout(() => { blurReady = true; }, 2000);
     }
 
     // Detect fullscreen exit
     ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(evt => {
         document.addEventListener(evt, () => {
-            if (!isFullscreen() && fsRequested && !isAutoSubmitting && !isExitingConfirmed) {
-                showWarning(
-                    'fullscreen_exit',
-                    'You exited fullscreen mode!',
-                    'Fullscreen exited during exam. Please return to fullscreen.'
-                );
+            if (isFullscreen()) {
+                isInExamFullscreen = true;
+                if (fsOverlay) fsOverlay.style.display = 'none';
+            } else {
+                // Only treat as violation if exam was actively in fullscreen,
+                // not during entry transition, not auto-submitting, and not confirmed exiting
+                if (isInExamFullscreen && !isFsTransitioning && !isAutoSubmitting && !isExitingConfirmed) {
+                    isInExamFullscreen = false;
+                    blurReady = false; // Disarm blur while warning modal is shown
+                    showWarning(
+                        'fullscreen_exit',
+                        'You exited fullscreen mode!',
+                        'Fullscreen exited during exam. Please return to fullscreen.'
+                    );
+                }
             }
         });
     });
 
     // ── Tab-switch & Window blur detection ───────────────────────────────────
-    let blurCooldown = false;
-    let blurReady = false;
-    setTimeout(() => { blurReady = true; }, 1500); // 1.5s grace after initial load
-
     function onFocusLost(source) {
-        if (!blurReady || isAutoSubmitting || isExitingConfirmed || blurCooldown) return;
+        if (!isInExamFullscreen || isFsTransitioning || !blurReady || isAutoSubmitting || isExitingConfirmed || blurCooldown) return;
         blurCooldown = true;
-        setTimeout(() => { blurCooldown = false; }, 1500); // 1.5s cooldown
+        setTimeout(() => { blurCooldown = false; }, 2000); // 2s cooldown
         showWarning(
             'tab_switch',
             'You switched tabs or windows!',
