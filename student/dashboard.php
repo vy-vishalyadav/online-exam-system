@@ -23,6 +23,7 @@ $student_class_name = $scrow['class_name'] ?? null;
 // - Exams assigned to this student's class
 $query = "SELECT e.*,
             (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
+            (SELECT COALESCE(SUM(marks), COUNT(*)) FROM questions q WHERE q.exam_id = e.id) AS total_marks,
             (SELECT score  FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
             (SELECT status FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
             (SELECT COUNT(*) FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id) AS attempt_count,
@@ -66,7 +67,13 @@ $exams = mysqli_query($conn, $query);
 <div class="row g-4 mb-5" id="examCardContainer">
     <?php if ($exams && mysqli_num_rows($exams) > 0): ?>
         <?php while ($exam = mysqli_fetch_assoc($exams)): 
-            $q_count = (int)$exam['q_count'];
+            $q_count           = (int)$exam['q_count'];
+            $total_marks       = (float)($exam['total_marks'] ?? $q_count);
+            $total_marks_disp  = (floor($total_marks) == $total_marks) ? (int)$total_marks : number_format($total_marks, 1);
+            $attempt_count     = (int)($exam['attempt_count'] ?? 0);
+            $has_attempted     = ($attempt_count > 0);
+            $last_status       = $exam['last_status'] ?? null;
+            $last_score        = $exam['last_score'] !== null ? (float)$exam['last_score'] : null;
             $session_submitted = (int)($exam['session_submitted'] ?? 0);
             $session_started   = !empty($exam['session_started_at']);
             $is_submitted      = ($has_attempted || $session_submitted === 1);
@@ -82,23 +89,26 @@ $exams = mysqli_query($conn, $query);
             $sched_badge    = '';
             if ($s_at && $now_ts < $s_at) {
                 $sched_locked = true;
-                $sched_badge  = '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1 small"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, h:i A', $s_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2.5 py-1 small live-sched-badge" data-target="' . $s_at . '" data-type="opens" data-label="Opens ' . date('d M, h:i A', $s_at) . '"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, h:i A', $s_at) . '</span>';
             } elseif ($e_at && $now_ts > $e_at) {
                 $sched_locked = true;
-                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2 py-1 small"><i class="bi bi-lock me-1"></i>Closed ' . date('d M, h:i A', $e_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2.5 py-1 small"><i class="bi bi-lock me-1"></i>Closed ' . date('d M, h:i A', $e_at) . '</span>';
             } elseif ($s_at && $e_at) {
-                $sched_badge  = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small"><i class="bi bi-broadcast me-1"></i>Live until ' . date('h:i A', $e_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small live-sched-badge" data-target="' . $e_at . '" data-type="closes" data-label="Live until ' . date('h:i A', $e_at) . '"><i class="bi bi-broadcast me-1"></i>Live until ' . date('h:i A', $e_at) . '</span>';
             }
         ?>
             <div class="col-md-6 col-lg-4 exam-card-wrapper" data-status="<?php echo $filter_status; ?>">
                 <div class="hover-card h-100 p-4 d-flex flex-column justify-content-between">
                     <div>
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-1">
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2.5 py-1 fw-bold">
                                 <i class="bi bi-clock me-1"></i><?php echo (int)$exam['duration_minutes']; ?> mins
                             </span>
-                            <span class="badge bg-light text-dark border rounded-pill px-3 py-1">
+                            <span class="badge bg-light text-dark border rounded-pill px-2.5 py-1">
                                 <i class="bi bi-patch-question me-1"></i><?php echo $q_count; ?> Questions
+                            </span>
+                            <span class="badge rounded-pill px-2.5 py-1 fw-bold" style="background:#eef2ff; color:#4f46e5; border: 1px solid #c7d2fe;">
+                                <i class="bi bi-award me-1"></i><?php echo $total_marks_disp; ?> Marks
                             </span>
                         </div>
                         <?php if ($sched_badge): ?>
@@ -120,16 +130,16 @@ $exams = mysqli_query($conn, $query);
                                         Your submission is being evaluated by your instructor.
                                     </div>
                                 <?php else: ?>
-                                    <?php $marks_obtained = ($q_count > 0) ? round($last_score * $q_count / 100) : 0; ?>
+                                    <?php $marks_obtained = ($total_marks > 0 && $last_score !== null) ? round($last_score * $total_marks / 100) : 0; ?>
                                     <div class="d-flex justify-content-between align-items-center">
                                         <small class="text-muted fw-semibold">Final Score:</small>
                                         <span class="fw-bold text-primary fs-6">
-                                            <?php echo $marks_obtained; ?> / <?php echo $q_count; ?> marks
+                                            <?php echo $marks_obtained; ?> / <?php echo $total_marks_disp; ?> marks
                                         </span>
                                     </div>
                                     <!-- Score bar -->
                                     <div class="progress mt-2 rounded-pill" style="height:6px;">
-                                        <div class="progress-bar bg-primary" style="width:<?php echo min(100, (int)$last_score); ?>%"></div>
+                                        <div class="progress-bar bg-primary" style="width:<?php echo min(100, (int)($last_score ?? 0)); ?>%"></div>
                                     </div>
                                     <div class="mt-2">
                                         <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small fw-bold">
@@ -185,7 +195,7 @@ $exams = mysqli_query($conn, $query);
                                 <!-- Not started: Start Exam -->
                                 <button type="button"
                                         class="btn btn-primary w-100 fw-bold shadow-sm py-2"
-                                        onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>)">
+                                        onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>, '<?php echo $total_marks_disp; ?>')">
                                     <i class="bi bi-play-fill me-1"></i> Start Exam
                                 </button>
                             <?php endif; ?>
@@ -220,18 +230,25 @@ $exams = mysqli_query($conn, $query);
             <div class="modal-body pt-2">
                 <p class="mb-3 text-dark">You are about to start: <strong id="modalExamTitle"></strong></p>
                 <div class="row g-2 mb-3">
-                    <div class="col-6">
-                        <div class="bg-primary-subtle rounded-3 p-3 text-center">
+                    <div class="col-4">
+                        <div class="bg-primary-subtle rounded-3 p-2 text-center">
                             <i class="bi bi-stopwatch-fill text-primary fs-4 d-block mb-1"></i>
-                            <div class="fw-bold text-primary" id="modalDuration"></div>
-                            <small class="text-muted">Time Limit</small>
+                            <div class="fw-bold text-primary small" id="modalDuration"></div>
+                            <small class="text-muted" style="font-size:0.75rem;">Time Limit</small>
                         </div>
                     </div>
-                    <div class="col-6">
-                        <div class="bg-success-subtle rounded-3 p-3 text-center">
+                    <div class="col-4">
+                        <div class="bg-success-subtle rounded-3 p-2 text-center">
                             <i class="bi bi-patch-question-fill text-success fs-4 d-block mb-1"></i>
-                            <div class="fw-bold text-success" id="modalQCount"></div>
-                            <small class="text-muted">Questions</small>
+                            <div class="fw-bold text-success small" id="modalQCount"></div>
+                            <small class="text-muted" style="font-size:0.75rem;">Questions</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="rounded-3 p-2 text-center" style="background:#eef2ff; border:1px solid #c7d2fe;">
+                            <i class="bi bi-award-fill fs-4 d-block mb-1" style="color:#4f46e5;"></i>
+                            <div class="fw-bold small" style="color:#4f46e5;" id="modalTotalMarks"></div>
+                            <small class="text-muted" style="font-size:0.75rem;">Total Marks</small>
                         </div>
                     </div>
                 </div>
@@ -251,10 +268,11 @@ $exams = mysqli_query($conn, $query);
 </div>
 
 <script>
-function confirmStartExam(examId, title, duration, qCount) {
+function confirmStartExam(examId, title, duration, qCount, totalMarks) {
     document.getElementById('modalExamTitle').textContent = title;
-    document.getElementById('modalDuration').textContent = duration + ' minutes';
+    document.getElementById('modalDuration').textContent = duration + ' mins';
     document.getElementById('modalQCount').textContent = qCount + ' questions';
+    document.getElementById('modalTotalMarks').textContent = totalMarks + ' marks';
     document.getElementById('modalBeginBtn').href = 'exam.php?id=' + examId;
     new bootstrap.Modal(document.getElementById('startExamModal')).show();
 }
@@ -277,6 +295,38 @@ function filterExams(status, btn) {
         }
     });
 }
+
+// Dynamic real-time countdown updater for schedule badges
+function updateScheduleBadges() {
+    var now = Math.floor(Date.now() / 1000);
+    document.querySelectorAll('.live-sched-badge').forEach(function(badge) {
+        var target = parseInt(badge.getAttribute('data-target'), 10);
+        var type = badge.getAttribute('data-type');
+        var defaultLabel = badge.getAttribute('data-label') || '';
+        if (!target) return;
+        var diff = target - now;
+        if (diff <= 0) {
+            if (type === 'opens') {
+                badge.innerHTML = '<i class="bi bi-broadcast me-1"></i>Opening now...';
+            } else {
+                badge.className = 'badge bg-secondary rounded-pill px-2.5 py-1 small';
+                badge.innerHTML = '<i class="bi bi-lock me-1"></i>Closed';
+            }
+            return;
+        }
+        var hours = Math.floor(diff / 3600);
+        var mins = Math.floor((diff % 3600) / 60);
+        var secs = diff % 60;
+        var timeStr = (hours > 0 ? hours + 'h ' : '') + mins + 'm ' + secs + 's';
+        if (type === 'closes') {
+            badge.innerHTML = '<i class="bi bi-broadcast me-1"></i>Live &bull; ' + timeStr + ' left';
+        } else if (type === 'opens') {
+            badge.innerHTML = '<i class="bi bi-calendar-event me-1"></i>Opens in ' + timeStr;
+        }
+    });
+}
+setInterval(updateScheduleBadges, 1000);
+updateScheduleBadges();
 </script>
 
 <?php include '../includes/footer.php'; ?>

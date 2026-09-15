@@ -15,8 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
         $error = "Invalid request.";
     } else {
-        $stmt = mysqli_prepare($conn, "UPDATE students SET password='student' WHERE id=?");
-        mysqli_stmt_bind_param($stmt, "i", $student_id);
+        $hashed_pw = password_hash('student', PASSWORD_DEFAULT);
+        $stmt = mysqli_prepare($conn, "UPDATE students SET password=? WHERE id=?");
+        mysqli_stmt_bind_param($stmt, "si", $hashed_pw, $student_id);
         mysqli_stmt_execute($stmt);
         mysqli_stmt_close($stmt);
         $_SESSION['flash_success'] = "Password reset to 'student'.";
@@ -214,7 +215,7 @@ $avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($
                                         <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1">Failed</span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="pe-4 text-end text-muted"><?php echo date('d M Y, H:i', strtotime($r['attempted_at'])); ?></td>
+                                <td class="pe-4 text-end text-muted"><?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?></td>
                             </tr>
                             <?php endforeach; endif; ?>
                         </tbody>

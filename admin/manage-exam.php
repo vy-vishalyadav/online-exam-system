@@ -497,6 +497,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (e > s) {
                     const diffMins = Math.round((e - s) / 60000);
                     if (durIn) durIn.value = diffMins;
+                }
             }
         });
     }

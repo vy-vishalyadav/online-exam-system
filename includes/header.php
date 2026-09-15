@@ -124,7 +124,7 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo in_array($current_page, ['manage-students.php','add-student.php']) ? 'active' : ''; ?>" href="manage-students.php">
+                            <a class="nav-link <?php echo in_array($current_page, ['manage-students.php','add-student.php','student-profile.php']) ? 'active' : ''; ?>" href="manage-students.php">
                                 <i class="bi bi-people me-1"></i> Students
                             </a>
                         </li>

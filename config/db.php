@@ -1,6 +1,10 @@
 <?php
 // Auto-detect environment (Localhost vs InfinityFree Cloud)
-if (isset($_SERVER['SERVER_NAME']) && ($_SERVER['SERVER_NAME'] === 'localhost' || $_SERVER['SERVER_NAME'] === '127.0.0.1')) {
+$is_local = (php_sapi_name() === 'cli')
+    || (isset($_SERVER['SERVER_NAME']) && in_array($_SERVER['SERVER_NAME'], ['localhost', '127.0.0.1', '::1']))
+    || (isset($_SERVER['HTTP_HOST']) && preg_match('/^(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/', $_SERVER['HTTP_HOST']));
+
+if ($is_local) {
     // Local XAMPP Settings
     $host = "localhost";
     $user = "root";
@@ -19,6 +23,9 @@ $conn = mysqli_connect($host, $user, $pass, $dbname);
 if (!$conn) {
     die("Database connection failed: " . mysqli_connect_error());
 }
+
+// Force UTF-8 (utf8mb4) to ensure math formulas and unicode symbols are never mangled
+mysqli_set_charset($conn, "utf8mb4");
 
 // Align timezone for PHP and MySQL (Asia/Kolkata +05:30)
 date_default_timezone_set('Asia/Kolkata');

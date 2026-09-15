@@ -58,14 +58,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $ans_id = (int)$ans_id;
 
                 // Fetch the max marks for this answer's question
-                $stmt_max = mysqli_prepare($conn, "SELECT q.marks FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.id = ? AND sa.result_id = ? LIMIT 1");
-                $q_max_marks = 1; // fallback
+                $stmt_max = mysqli_prepare($conn, "SELECT q.marks, q.question_type FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.id = ? AND sa.result_id = ? LIMIT 1");
+                $q_max_marks = 5; // fallback
                 if ($stmt_max) {
                     mysqli_stmt_bind_param($stmt_max, "ii", $ans_id, $result_id);
                     mysqli_stmt_execute($stmt_max);
                     $res_max = mysqli_stmt_get_result($stmt_max);
                     if ($row_max = mysqli_fetch_assoc($res_max)) {
-                        $q_max_marks = max(0.5, (float)($row_max['marks'] ?? 1));
+                        $default_m = (($row_max['question_type'] ?? '') === 'descriptive') ? 5.0 : 1.0;
+                        $q_max_marks = (isset($row_max['marks']) && (float)$row_max['marks'] > 0) ? (float)$row_max['marks'] : $default_m;
                     }
                     mysqli_stmt_close($stmt_max);
                 }
@@ -115,11 +116,19 @@ $search        = trim($_GET['search'] ?? '');
 $status_filter = trim($_GET['status'] ?? '');
 $class_filter  = (int)($_GET['class_id'] ?? 0);
 $student_filter = (int)($_GET['student_id'] ?? 0);
+$exam_filter   = (int)($_GET['exam_id'] ?? 0);
 
 // Fetch classes for dropdown
 $classes_res = mysqli_query($conn, "SELECT * FROM classes ORDER BY sort_order, name");
 $all_classes = [];
 while ($row = mysqli_fetch_assoc($classes_res)) $all_classes[] = $row;
+
+// Fetch exams for dropdown
+$exams_res = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
+$all_exams = [];
+if ($exams_res) {
+    while ($row = mysqli_fetch_assoc($exams_res)) $all_exams[] = $row;
+}
 
 // Build WHERE using prepared-style binding via SQL
 $where_clauses = [];
@@ -144,6 +153,11 @@ if ($class_filter > 0) {
     $where_clauses[] = "s.class_id = ?";
     $bind_types .= "i";
     $bind_params[] = &$class_filter;
+}
+if ($exam_filter > 0) {
+    $where_clauses[] = "r.exam_id = ?";
+    $bind_types .= "i";
+    $bind_params[] = &$exam_filter;
 }
 if ($student_filter > 0) {
     $where_clauses[] = "r.student_id = ?";
@@ -271,11 +285,24 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
 <div class="card shadow-sm mb-4 border-0 rounded-3">
     <div class="card-body py-3">
         <form method="GET" action="view-results.php" class="row align-items-center g-2">
-            <div class="col-md-4">
+            <?php if ($student_filter > 0): ?>
+                <input type="hidden" name="student_id" value="<?php echo $student_filter; ?>">
+            <?php endif; ?>
+            <div class="col-md-3">
                 <div class="input-group">
                     <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" name="search" class="form-control" placeholder="Search student, ID or exam..." value="<?php echo htmlspecialchars($search); ?>" maxlength="100">
                 </div>
+            </div>
+            <div class="col-md-3">
+                <select name="exam_id" class="form-select">
+                    <option value="">All Exams</option>
+                    <?php foreach ($all_exams as $ex): ?>
+                    <option value="<?php echo $ex['id']; ?>" <?php echo ($exam_filter == $ex['id']) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($ex['title']); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="col-md-2">
                 <select name="class_id" class="form-select">
@@ -296,7 +323,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
             </div>
             <div class="col-auto">
                 <button type="submit" class="btn btn-primary fw-semibold">Filter</button>
-                <?php if (!empty($search) || !empty($status_filter) || $class_filter || $student_filter): ?>
+                <?php if (!empty($search) || !empty($status_filter) || $class_filter || $exam_filter || $student_filter): ?>
                     <a href="view-results.php" class="btn btn-link text-decoration-none ms-2">Reset</a>
                 <?php endif; ?>
             </div>
@@ -410,7 +437,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                     else:
                     ?>
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="9" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-2 d-block mb-2 text-muted"></i> No exam results found matching your criteria.
                             </td>
                         </tr>
@@ -427,18 +454,34 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
         $rid = $r['id'];
         $items = $answers_by_result[$rid] ?? [];
         $has_items = !empty($items);
-        $total_questions = count($items);
+        $total_questions   = count($items);
         $mcq_correct_count = 0;
-        $desc_items = [];
-        $mcq_items  = [];
+        $desc_items        = [];
+        $mcq_items         = [];
+        $total_max_marks   = 0;
+        $mcq_total_marks   = 0;
+        $mcq_earned_marks  = 0;
+        $desc_total_marks  = 0;
+        $desc_earned_marks = 0;
 
         foreach ($items as $it) {
-            if (($it['question_type'] ?? 'mcq') === 'descriptive') {
+            $is_desc = (($it['question_type'] ?? 'mcq') === 'descriptive');
+            $q_marks = isset($it['question_marks']) && (float)$it['question_marks'] > 0
+                       ? (float)$it['question_marks']
+                       : ($is_desc ? 5.0 : 1.0);
+            $total_max_marks += $q_marks;
+
+            if ($is_desc) {
                 $desc_items[] = $it;
+                $desc_total_marks += $q_marks;
+                $desc_earned_marks += (float)($it['marks_awarded'] ?? 0);
             } else {
                 $mcq_items[] = $it;
-                if ($it['is_correct']) {
+                $mcq_total_marks += $q_marks;
+                if (!empty($it['is_correct'])) {
                     $mcq_correct_count++;
+                    $mcq_earned_marks += (isset($it['marks_awarded']) && $it['marks_awarded'] !== null)
+                                         ? (float)$it['marks_awarded'] : $q_marks;
                 }
             }
         }
@@ -460,6 +503,9 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                 <strong>Exam:</strong> <?php echo htmlspecialchars($r['exam_title']); ?> | 
                                 <strong>Student ID:</strong> <?php echo htmlspecialchars($r['email']); ?> | 
                                 <strong>Submitted:</strong> <?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?>
+                                <?php if (!empty($r['evaluated_at'])): ?>
+                                    | <strong>Evaluated:</strong> <?php echo date('d M Y, h:i A', strtotime($r['evaluated_at'])); ?>
+                                <?php endif; ?>
                             </small>
                         </div>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -485,43 +531,44 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                         $half_marks   = round($max_marks / 2, 2);
                                     ?>
                                         <div class="card mb-3 border rounded-3 p-3 bg-white shadow-sm">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                                <span class="fw-bold text-dark">Q: <?php echo htmlspecialchars($d_item['question_text']); ?></span>
-                                                <span class="badge bg-light text-dark border">Descriptive</span>
-                                            </div>
+                                             <div class="d-flex justify-content-between align-items-start mb-2">
+                                                 <span class="fw-bold text-dark">Q: <?php echo htmlspecialchars($d_item['question_text']); ?></span>
+                                                 <span class="badge bg-light text-dark border">Descriptive (Max <?php echo $max_marks; ?> pts)</span>
+                                             </div>
 
-                                            <div class="p-3 bg-light rounded-3 border mb-3">
-                                                <small class="text-muted fw-bold d-block mb-1">Student's Written Response:</small>
-                                                <div class="font-monospace text-dark" style="white-space: pre-wrap; font-size: 0.95rem;">
-                                                    <?php echo !empty($d_item['user_answer']) ? htmlspecialchars($d_item['user_answer']) : '<em class="text-muted">No answer written by student.</em>'; ?>
-                                                </div>
-                                            </div>
+                                             <div class="p-3 bg-light rounded-3 border mb-3">
+                                                 <small class="text-muted fw-bold d-block mb-1">Student's Written Response:</small>
+                                                 <div class="font-monospace text-dark" style="white-space: pre-wrap; font-size: 0.95rem;">
+                                                     <?php echo !empty($d_item['user_answer']) ? htmlspecialchars($d_item['user_answer']) : '<em class="text-muted">No answer written by student.</em>'; ?>
+                                                 </div>
+                                             </div>
 
-                                            <div class="row align-items-center g-2">
-                                                <div class="col-auto">
-                                                    <label class="form-label fw-bold mb-0 text-primary small">Marks Awarded (0 to <?php echo $max_marks; ?>):</label>
-                                                </div>
-                                                <div class="col-auto">
-                                                    <input type="number" 
-                                                           name="marks[<?php echo $aid; ?>]" 
-                                                           id="desc_mark_<?php echo $aid; ?>"
-                                                           class="form-control form-control-sm desc-mark-input-<?php echo $rid; ?> fw-bold" 
-                                                           min="0" 
-                                                           max="<?php echo $max_marks; ?>" 
-                                                           step="0.5" 
-                                                           value="<?php echo htmlspecialchars($current_marks); ?>" 
-                                                           style="width: 100px;">
-                                                </div>
-                                                <div class="col-auto">
-                                                    <button type="button" class="btn btn-sm btn-outline-success" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $max_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Full Mark (<?php echo $max_marks; ?>)</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $half_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Half Mark (<?php echo $half_marks; ?>)</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '0'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>);">Zero (0)</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
+                                             <div class="row align-items-center g-2">
+                                                 <div class="col-auto">
+                                                     <label class="form-label fw-bold mb-0 text-primary small">Marks Awarded (0 to <?php echo $max_marks; ?>):</label>
+                                                 </div>
+                                                 <div class="col-auto">
+                                                     <input type="number" 
+                                                            name="marks[<?php echo $aid; ?>]" 
+                                                            id="desc_mark_<?php echo $aid; ?>"
+                                                            class="form-control form-control-sm desc-mark-input-<?php echo $rid; ?> fw-bold" 
+                                                            min="0" 
+                                                            max="<?php echo $max_marks; ?>" 
+                                                            step="0.5" 
+                                                            value="<?php echo htmlspecialchars($current_marks); ?>" 
+                                                            oninput="calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);"
+                                                            style="width: 100px;">
+                                                 </div>
+                                                 <div class="col-auto">
+                                                     <button type="button" class="btn btn-sm btn-outline-success" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $max_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Full Mark (<?php echo $max_marks; ?>)</button>
+                                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $half_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Half Mark (<?php echo $half_marks; ?>)</button>
+                                                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '0'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Zero (0)</button>
+                                                 </div>
+                                             </div>
+                                         </div>
+                                     <?php endforeach; ?>
+                                 </div>
+                             <?php endif; ?>
 
                             <!-- MCQ Breakdown Section -->
                             <?php if (!empty($mcq_items)): ?>
@@ -596,7 +643,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                     <?php if ($has_items && !empty($desc_items)): ?>
                                         <button type="button" 
                                                 class="btn btn-sm btn-link text-decoration-none px-0 mt-1" 
-                                                onclick="calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_correct_count; ?>, <?php echo $total_questions; ?>)">
+                                                onclick="calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>)">
                                             <i class="bi bi-arrow-clockwise me-1"></i> Auto-Calculate from Marks
                                         </button>
                                     <?php endif; ?>
@@ -614,8 +661,9 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                 <div class="col-md-4">
                                     <label class="form-label fw-bold text-dark mb-1">Grading Summary</label>
                                     <div class="border rounded-3 p-2 bg-white text-muted small">
-                                        <div>Total Questions: <strong><?php echo $r['total_q']; ?></strong></div>
-                                        <div>Descriptive Qs: <strong><?php echo $r['desc_q_count']; ?></strong></div>
+                                        <div>Total Questions: <strong><?php echo $r['total_q']; ?></strong> (<?php echo count($mcq_items); ?> MCQ, <?php echo count($desc_items); ?> Desc)</div>
+                                        <div>Total Max Marks: <strong><?php echo $total_max_marks; ?></strong></div>
+                                        <div>MCQ Earned: <strong><?php echo $mcq_earned_marks; ?> / <?php echo $mcq_total_marks; ?></strong> pts</div>
                                         <div>Pass Threshold: <strong>50%</strong></div>
                                     </div>
                                 </div>
@@ -646,8 +694,8 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
     <?php endforeach; ?>
 
     <script>
-    function calculateTotalScore(resultId, mcqCorrectCount, totalQuestions) {
-        if (!totalQuestions || totalQuestions <= 0) return;
+    function calculateTotalScore(resultId, mcqEarnedMarks, totalMaxMarks) {
+        if (!totalMaxMarks || totalMaxMarks <= 0) return;
         
         let descInputs = document.querySelectorAll('.desc-mark-input-' + resultId);
         let descEarned = 0;
@@ -658,8 +706,8 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
             }
         });
 
-        let totalEarned = mcqCorrectCount + descEarned;
-        let percentage = Math.round((totalEarned / totalQuestions) * 100);
+        let totalEarned = (parseFloat(mcqEarnedMarks) || 0) + descEarned;
+        let percentage = Math.round((totalEarned / totalMaxMarks) * 100);
         if (percentage < 0) percentage = 0;
         if (percentage > 100) percentage = 100;
 

@@ -27,8 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) { $error = "Invalid request."; }
     else {
         $id = (int)($_POST['id'] ?? 0);
-        $stmt = mysqli_prepare($conn, "UPDATE students SET password='student' WHERE id=?");
-        mysqli_stmt_bind_param($stmt, "i", $id);
+        $hashed_pw = password_hash('student', PASSWORD_DEFAULT);
+        $stmt = mysqli_prepare($conn, "UPDATE students SET password=? WHERE id=?");
+        mysqli_stmt_bind_param($stmt, "si", $hashed_pw, $id);
         mysqli_stmt_execute($stmt);
         mysqli_stmt_close($stmt);
         $_SESSION['flash_success'] = "Password reset to 'student'.";
@@ -54,8 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
             $next_num = max(10001, (int)($row['max_num'] ?? 10000) + 1);
             $login_id = $next_num . "@rclasses.com";
 
-            $stmt = mysqli_prepare($conn, "INSERT INTO students (name, class_id, email, password) VALUES (?,?,?,'student')");
-            mysqli_stmt_bind_param($stmt, "sis", $name, $class_id, $login_id);
+            $hashed_pw = password_hash('student', PASSWORD_DEFAULT);
+            $stmt = mysqli_prepare($conn, "INSERT INTO students (name, class_id, email, password) VALUES (?,?,?,?)");
+            mysqli_stmt_bind_param($stmt, "siss", $name, $class_id, $login_id, $hashed_pw);
             if (mysqli_stmt_execute($stmt)) {
                 $_SESSION['flash_success'] = "Student <strong>" . htmlspecialchars($name, ENT_QUOTES) . "</strong> registered! &nbsp;|&nbsp; Login ID: <strong class='text-primary'>{$login_id}</strong> &nbsp;|&nbsp; Password: <strong>student</strong>";
                 header("Location: manage-students.php"); exit;
@@ -109,8 +111,9 @@ $classes_res = mysqli_query($conn, "SELECT * FROM classes ORDER BY sort_order, n
 $classes = [];
 while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
 
-// Active class filter from URL
+// Active class and search filter from URL
 $filter_class = (int)($_GET['class_id'] ?? 0);
+$search       = trim($_GET['search'] ?? '');
 
 // Fetch students with class name and attempt count
 $students_res = mysqli_query($conn,
@@ -150,18 +153,62 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
 </div>
 <?php endif; ?>
 
-<!-- Filter tabs -->
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div class="btn-group btn-group-sm" id="classFilterGroup">
-        <button type="button" class="btn btn-primary active" onclick="filterClass(0, this)">All</button>
-        <?php foreach ($classes as $c): ?>
-        <button type="button" class="btn btn-outline-primary" onclick="filterClass(<?php echo $c['id']; ?>, this)">
-            <?php echo htmlspecialchars($c['name']); ?>
-        </button>
-        <?php endforeach; ?>
-        <button type="button" class="btn btn-outline-secondary" onclick="filterClass(-1, this)">No Class</button>
+<!-- Search & Filters Card -->
+<div class="card shadow-sm border-0 rounded-4 mb-4">
+    <div class="card-body py-3">
+        <div class="row g-3 align-items-center">
+            <!-- Student Search Bar -->
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" id="studentSearchInput" class="form-control border-start-0" 
+                           placeholder="Search by student name or ID..." 
+                           value="<?php echo htmlspecialchars($search); ?>" 
+                           oninput="onSearchInput(this.value)">
+                    <button class="btn btn-outline-secondary border-start-0" type="button" id="clearSearchBtn" 
+                            style="<?php echo empty($search) ? 'display: none;' : ''; ?>" onclick="clearSearch()" title="Clear search">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+            <!-- Class Dropdown Filter -->
+            <div class="col-md-3">
+                <div class="input-group">
+                    <span class="input-group-text bg-light"><i class="bi bi-funnel text-muted"></i></span>
+                    <select id="classFilterSelect" class="form-select" onchange="onClassSelectChange(this.value)">
+                        <option value="0">All Classes</option>
+                        <?php foreach ($classes as $c): ?>
+                        <option value="<?php echo $c['id']; ?>" <?php echo ($filter_class == $c['id']) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($c['name']); ?>
+                        </option>
+                        <?php endforeach; ?>
+                        <option value="-1" <?php echo ($filter_class == -1) ? 'selected' : ''; ?>>No Class Assigned</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Stats & Quick Actions -->
+            <div class="col-md-4 d-flex justify-content-md-end align-items-center gap-2">
+                <span class="badge bg-primary rounded-pill px-3 py-2" id="studentCountBadge"><?php echo count($students); ?> Total</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="resetFiltersBtn" onclick="resetAllFilters()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Class Pills -->
+        <div class="d-flex align-items-center mt-3 pt-2 border-top flex-wrap gap-2">
+            <small class="text-muted fw-semibold me-1"><i class="bi bi-tags me-1"></i>Quick Filter:</small>
+            <div class="btn-group btn-group-sm flex-wrap" id="classFilterGroup">
+                <button type="button" class="btn btn-primary active" data-class-id="0" onclick="filterClass(0)">All</button>
+                <?php foreach ($classes as $c): ?>
+                <button type="button" class="btn btn-outline-primary" data-class-id="<?php echo $c['id']; ?>" onclick="filterClass(<?php echo $c['id']; ?>)">
+                    <?php echo htmlspecialchars($c['name']); ?>
+                </button>
+                <?php endforeach; ?>
+                <button type="button" class="btn btn-outline-secondary" data-class-id="-1" onclick="filterClass(-1)">No Class</button>
+            </div>
+        </div>
     </div>
-    <span class="badge bg-primary rounded-pill px-3 py-2" id="studentCountBadge"><?php echo count($students); ?> Total</span>
 </div>
 
 <div class="card shadow-sm border-0 rounded-4">
@@ -182,7 +229,10 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                     <?php if (empty($students)): ?>
                     <tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No students registered yet.</td></tr>
                     <?php else: $i = 1; foreach ($students as $s): ?>
-                    <tr class="student-row" data-class-id="<?php echo (int)($s['class_id'] ?? 0); ?>">
+                    <tr class="student-row" 
+                        data-class-id="<?php echo (int)($s['class_id'] ?? 0); ?>" 
+                        data-name="<?php echo htmlspecialchars(strtolower($s['name'])); ?>" 
+                        data-email="<?php echo htmlspecialchars(strtolower($s['email'])); ?>">
                         <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
                         <td>
                             <a href="student-profile.php?id=<?php echo $s['id']; ?>" class="fw-bold text-dark text-decoration-none">
@@ -275,6 +325,18 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                         </td>
                     </tr>
                     <?php endforeach; endif; ?>
+                    <!-- Empty Search State -->
+                    <tr id="noMatchesRow" style="display: none;">
+                        <td colspan="6" class="text-center text-muted py-5">
+                            <i class="bi bi-search fs-2 d-block mb-2 text-secondary"></i>
+                            No students found matching your search criteria.
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="resetAllFilters()">
+                                    Clear Search & Filters
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -297,7 +359,7 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                     </div>
                     <div class="form-text text-muted mt-2">
                         <i class="bi bi-info-circle text-primary me-1"></i>
-                        A unique 5-digit permanent ID (e.g. <code>10001@rclasses.com</code>) is auto-created with password <code>student</code>.
+                        A unique 5-digit permanent ID (e.g. <code>10001@rclasses.com</code>) is auto-created with default password <code>student</code>.
                     </div>
                 </div>
                 <div class="mb-0">
@@ -319,41 +381,106 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
 </div>
 
 <script>
-function filterClass(classId, btn) {
-    document.querySelectorAll('#classFilterGroup .btn').forEach(b => {
-        b.classList.remove('btn-primary','btn-secondary');
-        b.classList.add(b.dataset.variant || 'btn-outline-primary');
-        if (b.classList.contains('btn-outline-secondary') || b.textContent.trim() === 'No Class') {
-            b.classList.remove('btn-primary'); b.classList.add('btn-outline-secondary');
+let currentClassFilter = <?php echo (int)$filter_class; ?>;
+let currentSearchTerm  = <?php echo json_encode($search); ?>.toLowerCase().trim();
+
+function applyFilters() {
+    const term = currentSearchTerm;
+    const classId = currentClassFilter;
+    let visible = 0;
+    const rows = document.querySelectorAll('.student-row');
+
+    rows.forEach(row => {
+        const cid = parseInt(row.dataset.classId || '0');
+        const name = (row.dataset.name || '').toLowerCase();
+        const email = (row.dataset.email || '').toLowerCase();
+
+        const matchesClass = (classId === 0) || (classId === -1 && cid === 0) || (classId > 0 && cid === classId);
+        const matchesSearch = !term || name.includes(term) || email.includes(term);
+
+        if (matchesClass && matchesSearch) {
+            row.style.display = '';
+            visible++;
+        } else {
+            row.style.display = 'none';
         }
     });
-    btn.classList.remove('btn-outline-primary','btn-outline-secondary');
-    btn.classList.add(classId === -1 ? 'btn-secondary' : 'btn-primary');
 
-    let visible = 0;
-    document.querySelectorAll('.student-row').forEach(row => {
-        const cid = parseInt(row.dataset.classId);
-        let show = (classId === 0) || (classId === -1 && cid === 0) || (classId > 0 && cid === classId);
-        row.style.display = show ? '' : 'none';
-        if (show) visible++;
-    });
-    document.getElementById('studentCountBadge').textContent = visible + ' Shown';
+    // Update count badge
+    const badge = document.getElementById('studentCountBadge');
+    if (badge) {
+        badge.textContent = visible + ' Shown';
+    }
+
+    // Toggle no matches row
+    const noMatches = document.getElementById('noMatchesRow');
+    if (noMatches) {
+        noMatches.style.display = (visible === 0 && rows.length > 0) ? '' : 'none';
+    }
+
+    // Toggle clear search button
+    const clearBtn = document.getElementById('clearSearchBtn');
+    if (clearBtn) {
+        clearBtn.style.display = term.length > 0 ? '' : 'none';
+    }
 }
-// Auto-open add modal if requested via URL
-<?php if (($_GET['action'] ?? '') === 'new'): ?>
-document.addEventListener('DOMContentLoaded', () => new bootstrap.Modal(document.getElementById('addStudentModal')).show());
-<?php endif; ?>
-// Auto-filter if class_id in URL
-<?php if ($filter_class): ?>
+
+function filterClass(classId) {
+    currentClassFilter = parseInt(classId);
+
+    // Sync dropdown
+    const select = document.getElementById('classFilterSelect');
+    if (select) select.value = classId;
+
+    // Sync button pills
+    document.querySelectorAll('#classFilterGroup .btn').forEach(btn => {
+        const cid = parseInt(btn.dataset.classId);
+        if (cid === classId) {
+            btn.classList.remove('btn-outline-primary', 'btn-outline-secondary');
+            btn.classList.add(cid === -1 ? 'btn-secondary' : 'btn-primary', 'active');
+        } else {
+            btn.classList.remove('btn-primary', 'btn-secondary', 'active');
+            btn.classList.add(cid === -1 ? 'btn-outline-secondary' : 'btn-outline-primary');
+        }
+    });
+
+    applyFilters();
+}
+
+function onClassSelectChange(classId) {
+    filterClass(parseInt(classId));
+}
+
+function onSearchInput(val) {
+    currentSearchTerm = val.toLowerCase().trim();
+    applyFilters();
+}
+
+function clearSearch() {
+    const input = document.getElementById('studentSearchInput');
+    if (input) {
+        input.value = '';
+        input.focus();
+    }
+    currentSearchTerm = '';
+    applyFilters();
+}
+
+function resetAllFilters() {
+    clearSearch();
+    filterClass(0);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.querySelector(`#classFilterGroup button:nth-child(<?php
-        $idx = 2;
-        foreach ($classes as $idx2 => $c) { if ($c['id'] == $filter_class) { $idx = $idx2 + 2; break; } }
-        echo $idx;
-    ?>)`);
-    if (btn) filterClass(<?php echo $filter_class; ?>, btn);
+    // Initialize filters based on initial state
+    if (currentClassFilter !== 0 || currentSearchTerm !== '') {
+        filterClass(currentClassFilter);
+    }
+
+    <?php if (($_GET['action'] ?? '') === 'new'): ?>
+    new bootstrap.Modal(document.getElementById('addStudentModal')).show();
+    <?php endif; ?>
 });
-<?php endif; ?>
 </script>
 
 <?php include '../includes/footer.php'; ?>

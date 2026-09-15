@@ -221,8 +221,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     'has_descriptive' => $desc_count > 0,
                     'desc_count'      => $desc_count,
                     'total'           => $total_questions,
+                    'mcq_count'       => $mcq_count,
                     'correct'         => $correct_count,
-                    'wrong'           => $total_questions - $correct_count,
+                    'wrong'           => max(0, $mcq_count - $correct_count),
                     'score'           => $score_percentage,
                     'passed'          => $score_percentage >= 50,
                     'items'           => $recorded_answers
@@ -320,7 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                     $_SESSION['submission_review'] = [
                         'result_id'=>$new_rid,'exam_title'=>$to_exam['title'],'status'=>$status_to,
                         'has_descriptive'=>$desc_c>0,'desc_count'=>$desc_c,'total'=>$total_q,
-                        'correct'=>$correct_c,'wrong'=>$total_q-$correct_c,'score'=>$score_to,
+                        'mcq_count'=>$mcq_c,'correct'=>$correct_c,'wrong'=>max(0, $mcq_c - $correct_c),'score'=>$score_to,
                         'passed'=>$score_to>=50,'items'=>$rec_answers,'timed_out'=>true
                     ];
                 }
@@ -403,8 +404,9 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($
                         'has_descriptive' => $view_desc > 0,
                         'desc_count'      => $view_desc,
                         'total'           => $view_total,
+                        'mcq_count'       => max(0, $view_total - $view_desc),
                         'correct'         => $view_correct,
-                        'wrong'           => $view_total - $view_correct,
+                        'wrong'           => max(0, ($view_total - $view_desc) - $view_correct),
                         'score'           => $vr['score'],
                         'passed'          => $vr['score'] >= 50,
                         'items'           => $view_items,
@@ -538,17 +540,20 @@ mysqli_stmt_close($stmt);
                 <div class="row g-4 text-center justify-content-center mb-4">
                     <div class="col-6 col-md-3">
                         <div class="bg-primary-subtle p-3 rounded-4 border border-primary-subtle">
-                            <small class="text-muted fw-semibold">Marks Obtained</small>
+                            <small class="text-muted fw-semibold">Score Percentage</small>
                             <h2 class="fw-extrabold text-primary mb-0">
-                                <?php echo $submission_review['correct']; ?> / <?php echo $submission_review['total']; ?>
+                                <?php echo $submission_review['score']; ?>%
                             </h2>
                         </div>
                     </div>
                     <div class="col-6 col-md-3">
                         <div class="bg-success-subtle p-3 rounded-4 border border-success-subtle">
-                            <small class="text-muted fw-semibold">Correct</small>
+                            <small class="text-muted fw-semibold">Correct MCQs</small>
                             <h2 class="fw-extrabold text-success mb-0">
                                 <?php echo $submission_review['correct']; ?>
+                                <?php if (isset($submission_review['mcq_count'])): ?>
+                                    <small class="fs-6 text-muted">/ <?php echo $submission_review['mcq_count']; ?></small>
+                                <?php endif; ?>
                             </h2>
                         </div>
                     </div>
@@ -573,53 +578,113 @@ mysqli_stmt_close($stmt);
                 <!-- Detailed Question Breakdown -->
                 <h5 class="fw-bold mb-3 text-dark"><i class="bi bi-list-check me-2 text-primary"></i> Answer Breakdown</h5>
                 
-                <div class="accordion mb-4" id="reviewAccordion">
-                    <?php foreach ($submission_review['items'] as $idx => $item): 
-                        $num     = $idx + 1;
-                        $opt_map = [
-                            'A' => $item['option_a'] ?? '', 
-                            'B' => $item['option_b'] ?? '', 
-                            'C' => $item['option_c'] ?? '', 
-                            'D' => $item['option_d'] ?? ''
-                        ];
-                    ?>
-                        <div class="accordion-item border rounded-3 mb-2 overflow-hidden">
-                            <h2 class="accordion-header">
-                                <button class="accordion-button <?php echo $item['is_correct'] ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?php echo $num; ?>">
-                                    <div class="d-flex align-items-center gap-2 w-100 me-3">
-                                        <span class="fw-bold">Q<?php echo $num; ?>:</span>
-                                        <span class="text-truncate flex-grow-1 text-dark fw-semibold"><?php echo htmlspecialchars($item['question_text']); ?></span>
-                                        <?php if ($item['is_correct']): ?>
-                                            <span class="badge bg-success rounded-pill px-3 py-1">Correct</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-danger rounded-pill px-3 py-1">Incorrect</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </button>
-                            </h2>
-                            <div id="collapse<?php echo $num; ?>" class="accordion-collapse collapse show" data-bs-parent="#reviewAccordion">
-                                <div class="accordion-body bg-white">
-                                    <p class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($item['question_text']); ?></p>
-                                    <div class="small mb-2">
-                                        <strong>Your Answer:</strong> 
-                                        <?php if ($item['user_ans']): ?>
-                                            <span class="<?php echo $item['is_correct'] ? 'text-success fw-bold' : 'text-danger fw-bold'; ?>">
-                                                Option <?php echo htmlspecialchars($item['user_ans']); ?>: <?php echo htmlspecialchars($opt_map[$item['user_ans']] ?? ''); ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="text-muted fst-italic">Not answered</span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <?php if (!$item['is_correct']): ?>
-                                        <div class="small text-success fw-bold">
-                                            <i class="bi bi-check-circle-fill me-1"></i> Correct Answer: Option <?php echo htmlspecialchars($item['correct_ans']); ?>: <?php echo htmlspecialchars($opt_map[$item['correct_ans']] ?? ''); ?>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
+                <?php
+                $rev_desc_items = [];
+                $rev_mcq_items  = [];
+                foreach ($submission_review['items'] as $item) {
+                    if (($item['question_type'] ?? 'mcq') === 'descriptive') {
+                        $rev_desc_items[] = $item;
+                    } else {
+                        $rev_mcq_items[]  = $item;
+                    }
+                }
+                ?>
+
+                <!-- Descriptive Section -->
+                <?php if (!empty($rev_desc_items)): ?>
+                    <div class="mb-4">
+                        <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                            <h6 class="fw-bold text-dark mb-0">
+                                <i class="bi bi-file-earmark-text text-primary me-1"></i> Descriptive / Written Answers (<?php echo count($rev_desc_items); ?>)
+                            </h6>
+                            <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill">Instructor Evaluated</span>
                         </div>
-                    <?php endforeach; ?>
-                </div>
+                        <?php foreach ($rev_desc_items as $d_idx => $d_item): 
+                            $d_num   = $d_idx + 1;
+                            $d_marks = $d_item['marks'] ?? null;
+                        ?>
+                            <div class="card mb-3 border rounded-3 p-3 bg-white shadow-sm">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="fw-bold text-dark">Q<?php echo $d_num; ?>: <?php echo htmlspecialchars($d_item['question_text']); ?></span>
+                                    <span class="badge bg-light text-dark border">Descriptive</span>
+                                </div>
+                                <div class="p-3 bg-light rounded-3 border mb-2">
+                                    <small class="text-muted fw-bold d-block mb-1">Your Written Response:</small>
+                                    <div class="font-monospace text-dark" style="white-space: pre-wrap; font-size: 0.95rem;">
+                                        <?php echo !empty($d_item['user_ans']) ? htmlspecialchars($d_item['user_ans']) : '<em class="text-muted">No answer submitted.</em>'; ?>
+                                    </div>
+                                </div>
+                                <?php if ($d_marks !== null && $d_marks !== ''): ?>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
+                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo htmlspecialchars($d_marks); ?> pts
+                                        </span>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- MCQ Section -->
+                <?php if (!empty($rev_mcq_items)): ?>
+                    <div class="mb-4">
+                        <?php if (!empty($rev_desc_items)): ?>
+                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                                <h6 class="fw-bold text-dark mb-0">
+                                    <i class="bi bi-ui-checks text-primary me-1"></i> Multiple Choice Questions (<?php echo count($rev_mcq_items); ?>)
+                                </h6>
+                            </div>
+                        <?php endif; ?>
+                        <div class="accordion mb-4" id="reviewAccordion">
+                            <?php foreach ($rev_mcq_items as $m_idx => $item): 
+                                $num     = $m_idx + 1;
+                                $opt_map = [
+                                    'A' => $item['option_a'] ?? '', 
+                                    'B' => $item['option_b'] ?? '', 
+                                    'C' => $item['option_c'] ?? '', 
+                                    'D' => $item['option_d'] ?? ''
+                                ];
+                            ?>
+                                <div class="accordion-item border rounded-3 mb-2 overflow-hidden">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button <?php echo $item['is_correct'] ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?php echo $num; ?>">
+                                            <div class="d-flex align-items-center gap-2 w-100 me-3">
+                                                <span class="fw-bold">Q<?php echo $num; ?>:</span>
+                                                <span class="text-truncate flex-grow-1 text-dark fw-semibold"><?php echo htmlspecialchars($item['question_text']); ?></span>
+                                                <?php if ($item['is_correct']): ?>
+                                                    <span class="badge bg-success rounded-pill px-3 py-1">Correct</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-danger rounded-pill px-3 py-1">Incorrect</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </button>
+                                    </h2>
+                                    <div id="collapse<?php echo $num; ?>" class="accordion-collapse collapse show" data-bs-parent="#reviewAccordion">
+                                        <div class="accordion-body bg-white">
+                                            <p class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($item['question_text']); ?></p>
+                                            <div class="small mb-2">
+                                                <strong>Your Answer:</strong> 
+                                                <?php if ($item['user_ans']): ?>
+                                                    <span class="<?php echo $item['is_correct'] ? 'text-success fw-bold' : 'text-danger fw-bold'; ?>">
+                                                        Option <?php echo htmlspecialchars($item['user_ans']); ?>: <?php echo htmlspecialchars($opt_map[$item['user_ans']] ?? ''); ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="text-muted fst-italic">Not answered</span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <?php if (!$item['is_correct']): ?>
+                                                <div class="small text-success fw-bold">
+                                                    <i class="bi bi-check-circle-fill me-1"></i> Correct Answer: Option <?php echo htmlspecialchars($item['correct_ans']); ?>: <?php echo htmlspecialchars($opt_map[$item['correct_ans']] ?? ''); ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <div class="text-center">
                     <a href="dashboard.php" class="btn btn-primary btn-lg px-5 rounded-pill shadow-sm fw-bold">
@@ -674,9 +739,12 @@ mysqli_stmt_close($stmt);
                                 <?php if ($is_pending): ?>
                                     <span class="text-muted fst-italic"><i class="bi bi-hourglass me-1"></i>Pending</span>
                                 <?php else: ?>
-                                    <span class="fw-extrabold fs-6 text-primary">
-                                        <?php echo $r_marks; ?> / <?php echo $r_q_count ?: '—'; ?>
+                                    <span class="fw-extrabold fs-6 <?php echo $r['score'] >= 50 ? 'text-success' : 'text-danger'; ?>">
+                                        <?php echo $r['score']; ?>%
                                     </span>
+                                    <?php if ($r_q_count > 0): ?>
+                                        <small class="text-muted d-block"><?php echo $r_marks; ?> / <?php echo $r_q_count; ?> pts</small>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </td>
                             <td class="text-muted small">

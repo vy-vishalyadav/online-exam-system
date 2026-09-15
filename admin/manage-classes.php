@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_class'])) {
         $desc = trim($_POST['description'] ?? '');
         $sort = (int)($_POST['sort_order'] ?? 0);
         if (empty($name)) { $error = "Class name is required."; }
+        elseif (strlen($name) > 50) { $error = "Name too long (max 50)."; }
         else {
             $stmt = mysqli_prepare($conn, "UPDATE classes SET name=?, description=?, sort_order=? WHERE id=?");
             mysqli_stmt_bind_param($stmt, "ssii", $name, $desc, $sort, $cid);
@@ -73,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_class'])) {
                 $_SESSION['flash_success'] = "Class updated.";
                 header("Location: manage-classes.php"); exit;
             } else {
-                $error = "Update failed: " . mysqli_error($conn);
+                $error = mysqli_errno($conn) === 1062 ? "Class '$name' already exists." : "Update failed: " . mysqli_error($conn);
             }
             mysqli_stmt_close($stmt);
         }
@@ -107,8 +108,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
         $error = "Invalid request.";
     } else {
         $cid = (int)($_POST['class_id'] ?? 0);
-        $stmt = mysqli_prepare($conn, "UPDATE students SET password='student' WHERE class_id=?");
-        mysqli_stmt_bind_param($stmt, "i", $cid);
+        $hashed_pw = password_hash('student', PASSWORD_DEFAULT);
+        $stmt = mysqli_prepare($conn, "UPDATE students SET password=? WHERE class_id=?");
+        mysqli_stmt_bind_param($stmt, "si", $hashed_pw, $cid);
         mysqli_stmt_execute($stmt);
         $done = mysqli_stmt_affected_rows($stmt);
         mysqli_stmt_close($stmt);

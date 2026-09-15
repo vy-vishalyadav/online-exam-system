@@ -33,6 +33,41 @@ if (!$exam) {
     exit;
 }
 
+// ── Assigned Class Enforcement ──────────────────────────────────────────────
+$cls_chk = mysqli_prepare($conn, "SELECT 1 FROM exam_class_assignments WHERE exam_id = ? LIMIT 1");
+if ($cls_chk) {
+    mysqli_stmt_bind_param($cls_chk, "i", $exam_id);
+    mysqli_stmt_execute($cls_chk);
+    $has_class_restrictions = mysqli_fetch_assoc(mysqli_stmt_get_result($cls_chk));
+    mysqli_stmt_close($cls_chk);
+
+    if ($has_class_restrictions) {
+        $stu_cls = mysqli_prepare($conn, "SELECT s.class_id, c.name as class_name FROM students s LEFT JOIN classes c ON s.class_id = c.id WHERE s.id = ? LIMIT 1");
+        mysqli_stmt_bind_param($stu_cls, "i", $student_id);
+        mysqli_stmt_execute($stu_cls);
+        $stu_row = mysqli_fetch_assoc(mysqli_stmt_get_result($stu_cls));
+        mysqli_stmt_close($stu_cls);
+        $s_cid = (int)($stu_row['class_id'] ?? 0);
+
+        $elig_chk = mysqli_prepare($conn, "SELECT 1 FROM exam_class_assignments WHERE exam_id = ? AND class_id = ? LIMIT 1");
+        mysqli_stmt_bind_param($elig_chk, "ii", $exam_id, $s_cid);
+        mysqli_stmt_execute($elig_chk);
+        $is_eligible = mysqli_fetch_assoc(mysqli_stmt_get_result($elig_chk));
+        mysqli_stmt_close($elig_chk);
+
+        if (!$is_eligible) {
+            echo '<div class="card border-0 shadow-sm rounded-4 p-5 text-center my-4">
+                <i class="bi bi-shield-x fs-1 text-danger d-block mb-3"></i>
+                <h5 class="fw-bold">Access Restricted</h5>
+                <p class="text-muted">This exam is assigned to specific classes and is not available for your enrolled class.</p>
+                <a href="dashboard.php" class="btn btn-outline-primary fw-bold px-4">Back to Dashboard</a>
+            </div>';
+            include '../includes/footer.php';
+            exit;
+        }
+    }
+}
+
 // ── Schedule enforcement ─────────────────────────────────────────────────────
 $now      = time();
 $start_at = !empty($exam['start_at']) ? strtotime($exam['start_at']) : null;

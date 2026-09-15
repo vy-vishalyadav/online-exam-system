@@ -12,6 +12,20 @@ $filter_exam    = isset($_GET['exam_id'])    ? (int)$_GET['exam_id']    : 0;
 $filter_student = isset($_GET['student_id']) ? (int)$_GET['student_id'] : 0;
 $filter_type    = isset($_GET['type'])       ? trim($_GET['type'])       : '';
 
+$filtered_student_name = '';
+if ($filter_student > 0) {
+    $s_stmt = mysqli_prepare($conn, "SELECT name FROM students WHERE id=? LIMIT 1");
+    if ($s_stmt) {
+        mysqli_stmt_bind_param($s_stmt, "i", $filter_student);
+        mysqli_stmt_execute($s_stmt);
+        $s_res = mysqli_stmt_get_result($s_stmt);
+        if ($s_row = mysqli_fetch_assoc($s_res)) {
+            $filtered_student_name = $s_row['name'];
+        }
+        mysqli_stmt_close($s_stmt);
+    }
+}
+
 // Build query
 $where   = [];
 $params  = [];
@@ -127,6 +141,15 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
 <div class="card border-0 shadow-sm rounded-4 mb-4">
     <div class="card-body py-3">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($filter_student > 0): ?>
+                <input type="hidden" name="student_id" value="<?php echo $filter_student; ?>">
+                <div class="col-12 mb-1">
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill">
+                        <i class="bi bi-person-fill-exclamation me-1"></i> Filtering for Student: <strong><?php echo htmlspecialchars($filtered_student_name ?: "ID #$filter_student"); ?></strong>
+                        <a href="violations.php<?php echo $filter_exam ? '?exam_id='.$filter_exam : ''; ?>" class="text-danger ms-2 text-decoration-none fw-bold" title="Clear student filter">&times; Clear Student</a>
+                    </span>
+                </div>
+            <?php endif; ?>
             <div class="col-md-4">
                 <label class="form-label small fw-semibold text-muted mb-1">Filter by Exam</label>
                 <select name="exam_id" class="form-select form-select-sm">
@@ -152,7 +175,9 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                 <button type="submit" class="btn btn-primary btn-sm fw-semibold px-4">
                     <i class="bi bi-funnel me-1"></i> Apply
                 </button>
-                <a href="violations.php" class="btn btn-outline-secondary btn-sm fw-semibold px-3 ms-2">Reset</a>
+                <?php if ($filter_exam || $filter_student || !empty($filter_type)): ?>
+                    <a href="violations.php" class="btn btn-outline-secondary btn-sm fw-semibold px-3 ms-2">Reset</a>
+                <?php endif; ?>
             </div>
         </form>
     </div>
@@ -176,7 +201,7 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                         <th>Type</th>
                         <th>Detail</th>
                         <th>IP Address</th>
-                        <th class="pe-4 text-end">Time</th>
+                        <th class="pe-4 text-end">Occurred At</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -220,7 +245,7 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                             </td>
                             <td class="text-muted"><?php echo htmlspecialchars($v['detail'] ?? '—'); ?></td>
                             <td class="font-monospace text-muted"><?php echo htmlspecialchars($v['ip_address'] ?? '—'); ?></td>
-                            <td class="pe-4 text-end text-muted"><?php echo date('d M H:i:s', strtotime($v['occurred_at'])); ?></td>
+                            <td class="pe-4 text-end text-muted font-monospace"><?php echo date('d M Y, h:i:s A', strtotime($v['occurred_at'])); ?></td>
                         </tr>
                     <?php endforeach; endif; ?>
                 </tbody>
