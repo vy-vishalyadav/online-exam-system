@@ -354,30 +354,54 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         </div>
     </div>
 
-    <!-- UI In-Page Exit Confirmation Modal (keeps fullscreen active, 0 violations) -->
+    <!-- UI In-Page Exit Confirmation Modal (keeps fullscreen active, 0 violations if cancelled) -->
     <div class="modal fade" id="exitConfirmModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-                <div class="modal-header bg-dark text-white border-0 py-3">
+                <div class="modal-header bg-danger text-white border-0 py-3">
                     <h5 class="modal-title fw-bold">
-                        <i class="bi bi-door-open-fill text-warning me-2"></i> Exit Examination?
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i> Warning: Exit Examination?
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body p-4 text-center">
-                    <div class="mb-3">
-                        <i class="bi bi-shield-check text-success" style="font-size:3rem;"></i>
-                    </div>
-                    <h5 class="fw-bold text-dark mb-2">Your draft answers are safely saved.</h5>
-                    <p class="text-muted mb-0">
-                        Are you sure you want to exit? If the exam timer has not expired, you can return and continue later.
+                <div class="modal-body p-4">
+                    <p class="text-dark fw-bold mb-3">
+                        Exiting this exam before final submission has the following consequences:
                     </p>
+                    
+                    <div class="list-group list-group-flush border rounded-3 mb-3 small">
+                        <div class="list-group-item d-flex align-items-start gap-2.5 py-2.5">
+                            <i class="bi bi-shield-exclamation text-danger fs-5 mt-n1 flex-shrink-0"></i>
+                            <div>
+                                <strong class="text-danger d-block">Integrity Strike Will Be Recorded</strong>
+                                Leaving the exam mid-session is logged as an integrity violation (<span id="exitWarnNext" class="fw-bold">1</span> of 3 warnings). Reaching 3 violations auto-submits your exam.
+                            </div>
+                        </div>
+                        <div class="list-group-item d-flex align-items-start gap-2.5 py-2.5">
+                            <i class="bi bi-stopwatch text-warning fs-5 mt-n1 flex-shrink-0"></i>
+                            <div>
+                                <strong class="text-dark d-block">The Timer Will NOT Pause</strong>
+                                The exam timer continues counting down on the server. If time runs out while you are away, your exam will be automatically closed and submitted.
+                            </div>
+                        </div>
+                        <div class="list-group-item d-flex align-items-start gap-2.5 py-2.5">
+                            <i class="bi bi-cloud-check text-success fs-5 mt-n1 flex-shrink-0"></i>
+                            <div>
+                                <strong class="text-dark d-block">Draft Answers Are Preserved</strong>
+                                All answers you have selected so far are saved in drafts and will be loaded if you re-enter before time expires.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-danger-subtle text-danger border border-danger-subtle rounded-3 py-2 px-3 small text-center mb-0 fw-semibold">
+                        Are you sure you want to exit to the dashboard?
+                    </div>
                 </div>
                 <div class="modal-footer border-0 justify-content-center gap-2 pb-4">
                     <button type="button" class="btn btn-outline-secondary px-4 fw-semibold rounded-pill" data-bs-dismiss="modal">
-                        <i class="bi bi-arrow-left me-1"></i> Stay in Exam
+                        <i class="bi bi-arrow-return-left me-1"></i> Stay in Exam
                     </button>
-                    <button type="button" class="btn btn-danger px-4 fw-bold rounded-pill" id="confirmExitBtn">
+                    <button type="button" class="btn btn-danger px-4 fw-bold rounded-pill shadow-sm" id="confirmExitBtn">
                         <i class="bi bi-box-arrow-right me-1"></i> Yes, Exit Exam
                     </button>
                 </div>
@@ -575,12 +599,31 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             });
         });
 
-        // Confirm Exit button inside the UI modal
+        // Confirm Exit button inside the UI modal: logs violation and exits
         const confirmExitBtn = document.getElementById('confirmExitBtn');
         if (confirmExitBtn) {
             confirmExitBtn.addEventListener('click', () => {
                 isExitingConfirmed = true;
-                window.location.href = pendingExitHref;
+                confirmExitBtn.disabled = true;
+                confirmExitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Exiting...';
+
+                // Log the voluntary exit as an integrity violation strike
+                const fd = new FormData();
+                fd.append('exam_id',    EXAM_ID);
+                fd.append('type',       'tab_switch');
+                fd.append('detail',     'Voluntarily exited exam to dashboard before submitting');
+                fd.append('csrf_token', CSRF_TOKEN);
+
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon(VIOLATION_URL, fd);
+                }
+                fetch(VIOLATION_URL, { method: 'POST', body: fd, keepalive: true }).finally(() => {
+                    window.location.href = pendingExitHref;
+                });
+                // Safety redirect in case network hangs
+                setTimeout(() => {
+                    window.location.href = pendingExitHref;
+                }, 350);
             });
         }
 
@@ -690,6 +733,10 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
 
     function openExitModal(targetHref) {
         pendingExitHref = targetHref || 'dashboard.php';
+        const exitWarnSpan = document.getElementById('exitWarnNext');
+        if (exitWarnSpan) {
+            exitWarnSpan.textContent = Math.min(3, warningCount + 1);
+        }
         const m = getExitModal();
         if (m) m.show();
     }
