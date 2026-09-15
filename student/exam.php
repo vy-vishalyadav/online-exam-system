@@ -354,6 +354,83 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         </div>
     </div>
 
+    <!-- UI In-Page Exit Confirmation Modal (keeps fullscreen active, 0 violations) -->
+    <div class="modal fade" id="exitConfirmModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-dark text-white border-0 py-3">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-door-open-fill text-warning me-2"></i> Exit Examination?
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-shield-check text-success" style="font-size:3rem;"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark mb-2">Your draft answers are safely saved.</h5>
+                    <p class="text-muted mb-0">
+                        Are you sure you want to exit? If the exam timer has not expired, you can return and continue later.
+                    </p>
+                </div>
+                <div class="modal-footer border-0 justify-content-center gap-2 pb-4">
+                    <button type="button" class="btn btn-outline-secondary px-4 fw-semibold rounded-pill" data-bs-dismiss="modal">
+                        <i class="bi bi-arrow-left me-1"></i> Stay in Exam
+                    </button>
+                    <button type="button" class="btn btn-danger px-4 fw-bold rounded-pill" id="confirmExitBtn">
+                        <i class="bi bi-box-arrow-right me-1"></i> Yes, Exit Exam
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI In-Page Submit Confirmation Modal (keeps fullscreen active, 0 violations) -->
+    <div class="modal fade" id="submitConfirmModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-primary text-white border-0 py-3">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-send-check-fill me-2"></i> Ready to Submit?
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="text-muted text-center mb-3">Please review your question status before submitting:</p>
+                    <div class="row g-3 mb-3 text-center">
+                        <div class="col-6">
+                            <div class="bg-success-subtle p-3 rounded-4 border border-success-subtle">
+                                <small class="text-muted fw-semibold d-block">Answered</small>
+                                <h3 class="fw-extrabold text-success mb-0" id="modalAnsweredCount">0</h3>
+                                <small class="text-muted">of <?php echo $total_questions; ?></small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="bg-warning-subtle p-3 rounded-4 border border-warning-subtle">
+                                <small class="text-muted fw-semibold d-block">Unanswered</small>
+                                <h3 class="fw-extrabold text-warning mb-0" id="modalUnansweredCount">0</h3>
+                                <small class="text-muted">remaining</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="modalUnansweredWarning" class="alert alert-warning border-0 rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-0" style="display:none !important;">
+                        <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0 text-warning"></i>
+                        <div>You still have unanswered questions. Once submitted, answers cannot be modified.</div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 justify-content-center gap-2 pb-4">
+                    <button type="button" class="btn btn-outline-secondary px-4 fw-semibold rounded-pill" data-bs-dismiss="modal">
+                        <i class="bi bi-pencil me-1"></i> Continue Answering
+                    </button>
+                    <button type="button" class="btn btn-success px-4 fw-bold rounded-pill shadow-sm" id="confirmFinalSubmitBtn">
+                        <i class="bi bi-check-circle-fill me-1"></i> Confirm &amp; Submit
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Violation counter badge (top-left of sticky bar) -->
     <div id="violationBadge" style="display:none;position:fixed;top:70px;right:16px;z-index:9999;">
         <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-2 shadow-sm small fw-semibold">
@@ -362,7 +439,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         </span>
     </div>
 
-    <form method="POST" action="result.php" id="examForm" onsubmit="return confirmSubmission();">
+    <form method="POST" action="result.php" id="examForm" onsubmit="return isAutoSubmitting;">
         <input type="hidden" name="exam_id"          value="<?php echo $exam_id; ?>">
         <input type="hidden" name="submit_exam"      value="1">
         <input type="hidden" name="csrf_token"       value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
@@ -426,11 +503,10 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
 
         <div class="card shadow-sm border-0 rounded-4 p-4 mb-5">
             <div class="d-flex justify-content-between align-items-center">
-                <a href="dashboard.php" class="btn btn-outline-secondary px-4 fw-semibold"
-                   onclick="return confirm('Are you sure you want to exit? Your draft answers are auto-saved.');">
+                <button type="button" class="btn btn-outline-secondary px-4 fw-semibold" id="btnOpenExitModal">
                     <i class="bi bi-arrow-left me-1"></i> Exit Exam
-                </a>
-                <button type="submit" class="btn btn-success px-5 py-2.5 fw-bold shadow">
+                </button>
+                <button type="button" class="btn btn-success px-5 py-2.5 fw-bold shadow" id="btnOpenSubmitModal">
                     <i class="bi bi-check-circle-fill me-1"></i> Submit Exam
                 </button>
             </div>
@@ -458,7 +534,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         } catch(e) {}
     }
 
-    // On page load: restore any localStorage values not already pre-filled by PHP drafts
+    // On page load: restore any localStorage values not already pre-filled by PHP drafts & wire UI modals
     document.addEventListener('DOMContentLoaded', function() {
         const cache = lsLoad();
         Object.entries(cache).forEach(([qid, val]) => {
@@ -475,6 +551,58 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 updateCharCount(parseInt(qid), val.length);
             }
         });
+
+        // ── Wire up Exit confirmation modal (keeps fullscreen active, 0 violations) ──
+        const btnExit = document.getElementById('btnOpenExitModal');
+        if (btnExit) {
+            btnExit.addEventListener('click', (e) => {
+                e.preventDefault();
+                openExitModal('dashboard.php');
+            });
+        }
+
+        // Intercept all navbar links (logo, My Exams, My Results, dropdown items) during exam
+        document.querySelectorAll('nav.navbar a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (this.classList.contains('dropdown-toggle') || this.getAttribute('data-bs-toggle') === 'dropdown') {
+                    return; // Allow dropdown menu to toggle
+                }
+                if (href && href !== '#' && !href.startsWith('javascript:')) {
+                    e.preventDefault();
+                    openExitModal(this.href);
+                }
+            });
+        });
+
+        // Confirm Exit button inside the UI modal
+        const confirmExitBtn = document.getElementById('confirmExitBtn');
+        if (confirmExitBtn) {
+            confirmExitBtn.addEventListener('click', () => {
+                isExitingConfirmed = true;
+                window.location.href = pendingExitHref;
+            });
+        }
+
+        // ── Wire up Submit confirmation modal (keeps fullscreen active, 0 violations) ──
+        const btnSubmit = document.getElementById('btnOpenSubmitModal');
+        if (btnSubmit) {
+            btnSubmit.addEventListener('click', (e) => {
+                e.preventDefault();
+                openSubmitModal();
+            });
+        }
+
+        // Confirm Final Submit button inside the UI modal
+        const confirmFinalSubmitBtn = document.getElementById('confirmFinalSubmitBtn');
+        if (confirmFinalSubmitBtn) {
+            confirmFinalSubmitBtn.addEventListener('click', () => {
+                isAutoSubmitting = true;
+                const m = getSubmitModal();
+                if (m) m.hide();
+                document.getElementById('examForm').submit();
+            });
+        }
     });
 
     // ── Option highlight ──────────────────────────────────────────────────────
@@ -537,20 +665,60 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             .catch(() => setSaveStatus('⚠ Offline — draft in browser', '#e67e22'));
     }
 
-    // ── Confirmation before manual submit ─────────────────────────────────────
-    let isAutoSubmitting = false;
-    function confirmSubmission() {
-        if (isAutoSubmitting) return true;
+    // ── State flags & UI Modals (keeps fullscreen intact, 0 violations) ──────
+    let isAutoSubmitting    = false;
+    let isExitingConfirmed  = false;
+    let pendingExitHref     = 'dashboard.php';
+    let exitModalInstance   = null;
+    let submitModalInstance = null;
+
+    function getExitModal() {
+        if (!exitModalInstance && typeof bootstrap !== 'undefined') {
+            const el = document.getElementById('exitConfirmModal');
+            if (el) exitModalInstance = new bootstrap.Modal(el, {backdrop:'static', keyboard:false});
+        }
+        return exitModalInstance;
+    }
+
+    function getSubmitModal() {
+        if (!submitModalInstance && typeof bootstrap !== 'undefined') {
+            const el = document.getElementById('submitConfirmModal');
+            if (el) submitModalInstance = new bootstrap.Modal(el, {backdrop:'static', keyboard:false});
+        }
+        return submitModalInstance;
+    }
+
+    function openExitModal(targetHref) {
+        pendingExitHref = targetHref || 'dashboard.php';
+        const m = getExitModal();
+        if (m) m.show();
+    }
+
+    function openSubmitModal() {
         const answeredMcq  = document.querySelectorAll('input[type="radio"]:checked').length;
         let   answeredDesc = 0;
         document.querySelectorAll('textarea.descriptive-input').forEach(t => {
             if (t.value.trim().length > 0) answeredDesc++;
         });
-        const answered = answeredMcq + answeredDesc;
-        if (answered < TOTAL_Q) {
-            return confirm(`You have answered ${answered} of ${TOTAL_Q} questions. Submit anyway?`);
+        const answered   = answeredMcq + answeredDesc;
+        const unanswered = Math.max(0, TOTAL_Q - answered);
+
+        const ansEl   = document.getElementById('modalAnsweredCount');
+        const unansEl = document.getElementById('modalUnansweredCount');
+        const warnEl  = document.getElementById('modalUnansweredWarning');
+
+        if (ansEl)   ansEl.textContent   = answered;
+        if (unansEl) unansEl.textContent = unanswered;
+        if (warnEl) {
+            if (unanswered > 0) {
+                warnEl.style.setProperty('display', 'flex', 'important');
+            } else {
+                warnEl.style.setProperty('display', 'none', 'important');
+            }
         }
-        return confirm('Are you sure you want to submit your exam?');
+
+        const m = getSubmitModal();
+        if (m) m.show();
     }
 
     // ── Server-authoritative timer ────────────────────────────────────────────
@@ -569,7 +737,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         isAutoSubmitting = true;
         timerText.textContent = "00:00 — Time's Up!";
         timerBox.classList.add('warning');
-        alert(reason + "\nYour exam is being submitted automatically.");
+        // Submit directly without native alert() which freezes JS & drops fullscreen
         document.getElementById('examForm').submit();
     }
 
@@ -737,7 +905,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     // Detect fullscreen exit
     ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(evt => {
         document.addEventListener(evt, () => {
-            if (!isFullscreen() && fsRequested && !isAutoSubmitting) {
+            if (!isFullscreen() && fsRequested && !isAutoSubmitting && !isExitingConfirmed) {
                 showWarning(
                     'fullscreen_exit',
                     'You exited fullscreen mode!',
@@ -753,7 +921,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     setTimeout(() => { blurReady = true; }, 1500); // 1.5s grace after initial load
 
     function onFocusLost(source) {
-        if (!blurReady || isAutoSubmitting || blurCooldown) return;
+        if (!blurReady || isAutoSubmitting || isExitingConfirmed || blurCooldown) return;
         blurCooldown = true;
         setTimeout(() => { blurCooldown = false; }, 1500); // 1.5s cooldown
         showWarning(
@@ -773,13 +941,20 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         onFocusLost('window lost focus');
     });
 
-    // ── Prevent accidental tab closing (beforeunload) ────────────────────────
+    // ── Prevent accidental tab closing (beforeunload & pagehide) ─────────────
     window.addEventListener('beforeunload', (e) => {
-        if (isAutoSubmitting) return;
-        logViolation('tab_switch', 'Closed exam tab or navigated away');
+        if (isAutoSubmitting || isExitingConfirmed) return;
+        // Do NOT log violation inside beforeunload! If student clicks 'Cancel' to stay,
+        // logging here would unfairly penalize them.
         e.preventDefault();
         e.returnValue = 'Are you sure you want to leave? Your exam progress will be affected.';
         return e.returnValue;
+    });
+
+    window.addEventListener('pagehide', () => {
+        if (isAutoSubmitting || isExitingConfirmed) return;
+        // Only log violation when the page is actually unloaded
+        logViolation('tab_switch', 'Closed exam tab or navigated away');
     });
 
     // ── Block right-click ─────────────────────────────────────────────────────
