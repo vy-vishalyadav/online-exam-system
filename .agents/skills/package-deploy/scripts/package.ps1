@@ -40,7 +40,7 @@ Write-Host "==> Step 2: Collecting strictly essential website runtime files..." 
 
 # Runtime folders and files strictly needed for the website to function
 $allowedFolders = @('admin', 'config', 'css', 'includes', 'sql', 'student')
-$allowedRootFiles = @('index.php', 'logout.php', 'version.txt')
+$allowedRootFiles = @('index.php', 'logout.php', 'version.txt', '.htaccess')
 
 $runtimeFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 

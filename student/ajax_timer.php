@@ -12,6 +12,7 @@ if (!isset($_SESSION['student_id'])) {
 include '../config/db.php';
 
 $student_id = (int)$_SESSION['student_id'];
+session_write_close(); // Release session file lock immediately to optimize concurrent AJAX requests
 $exam_id    = (int)($_GET['exam_id'] ?? 0);
 
 if (!$exam_id) {
