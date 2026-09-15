@@ -336,6 +336,86 @@ if (!empty($_SESSION['submission_review'])) {
     unset($_SESSION['submission_review']);
 }
 
+// ── Handle view specific past result by exam_id (from dashboard "View Result" button) ──
+if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['view_exam_id'])) {
+    $view_exam_id = (int)$_GET['view_exam_id'];
+    if ($view_exam_id > 0) {
+        $vr_stmt = mysqli_prepare($conn,
+            "SELECT r.*, e.title AS exam_title
+             FROM results r
+             JOIN exams e ON r.exam_id = e.id
+             WHERE r.student_id = ? AND r.exam_id = ? AND r.status = 'published'
+             ORDER BY r.attempted_at DESC LIMIT 1");
+        if ($vr_stmt) {
+            mysqli_stmt_bind_param($vr_stmt, "ii", $student_id, $view_exam_id);
+            mysqli_stmt_execute($vr_stmt);
+            $vr = mysqli_fetch_assoc(mysqli_stmt_get_result($vr_stmt));
+            mysqli_stmt_close($vr_stmt);
+
+            if ($vr) {
+                $sa_stmt = mysqli_prepare($conn,
+                    "SELECT sa.*, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                            q.correct_option, q.question_type
+                     FROM student_answers sa
+                     JOIN questions q ON sa.question_id = q.id
+                     WHERE sa.result_id = ?
+                     ORDER BY sa.id ASC");
+                if ($sa_stmt) {
+                    mysqli_stmt_bind_param($sa_stmt, "i", (int)$vr['id']);
+                    mysqli_stmt_execute($sa_stmt);
+                    $sa_res     = mysqli_stmt_get_result($sa_stmt);
+                    $view_items = []; $view_correct = 0; $view_total = 0; $view_desc = 0;
+                    while ($sa_row = mysqli_fetch_assoc($sa_res)) {
+                        $view_total++;
+                        $q_type = $sa_row['question_type'] ?? 'mcq';
+                        if ($q_type === 'descriptive') {
+                            $view_desc++;
+                            $view_items[] = [
+                                'question_id'   => $sa_row['question_id'],
+                                'question_type' => 'descriptive',
+                                'question_text' => $sa_row['question_text'],
+                                'user_ans'      => $sa_row['user_answer'],
+                                'is_correct'    => null,
+                                'marks'         => $sa_row['marks_awarded'],
+                            ];
+                        } else {
+                            if ($sa_row['is_correct']) $view_correct++;
+                            $view_items[] = [
+                                'question_id'   => $sa_row['question_id'],
+                                'question_type' => 'mcq',
+                                'question_text' => $sa_row['question_text'],
+                                'option_a'      => $sa_row['option_a'],
+                                'option_b'      => $sa_row['option_b'],
+                                'option_c'      => $sa_row['option_c'],
+                                'option_d'      => $sa_row['option_d'],
+                                'user_ans'      => $sa_row['user_answer'],
+                                'correct_ans'   => $sa_row['correct_option'],
+                                'is_correct'    => $sa_row['is_correct'],
+                                'marks'         => $sa_row['marks_awarded'],
+                            ];
+                        }
+                    }
+                    mysqli_stmt_close($sa_stmt);
+                    $submission_review = [
+                        'result_id'       => $vr['id'],
+                        'exam_title'      => $vr['exam_title'],
+                        'status'          => 'published',
+                        'has_descriptive' => $view_desc > 0,
+                        'desc_count'      => $view_desc,
+                        'total'           => $view_total,
+                        'correct'         => $view_correct,
+                        'wrong'           => $view_total - $view_correct,
+                        'score'           => $vr['score'],
+                        'passed'          => $vr['score'] >= 50,
+                        'items'           => $view_items,
+                        'is_historical'   => true,
+                    ];
+                }
+            }
+        }
+    }
+}
+
 // Flash message for already-submitted
 $already_submitted_msg = "";
 if (!empty($_SESSION['flash_already_submitted'])) {
@@ -575,7 +655,8 @@ mysqli_stmt_close($stmt);
                         <th>Time Taken</th>
                         <th>Status</th>
                         <th>Instructor Feedback</th>
-                        <th class="pe-4 text-end">Attempted On</th>
+                        <th class="text-end">Attempted On</th>
+                        <th class="pe-4 text-center">Details</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -634,14 +715,24 @@ mysqli_stmt_close($stmt);
                                     <span class="text-muted small">-</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="pe-4 text-end text-muted small"><?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?></td>
+                            <td class="text-end text-muted small"><?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?></td>
+                            <td class="pe-4 text-center">
+                                <?php if (!$is_pending): ?>
+                                    <a href="result.php?view_exam_id=<?php echo (int)$r['exam_id']; ?>"
+                                       class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">
+                                        <i class="bi bi-eye me-1"></i> View
+                                    </a>
+                                <?php else: ?>
+                                    <span class="text-muted small">—</span>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php
                         endforeach;
                     else:
                     ?>
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
+                            <td colspan="8" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i> You have not attempted any exam yet.
                             </td>
                         </tr>

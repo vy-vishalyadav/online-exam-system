@@ -159,18 +159,38 @@ $exams = mysqli_query($conn, $query);
                             </button>
                         <?php elseif ($q_count > 0): ?>
                             <?php if ($passed): ?>
-                                <!-- Passed: muted retake button -->
-                                <a href="exam.php?id=<?php echo $exam['id']; ?>" class="btn btn-outline-secondary w-100 fw-bold py-2">
+                            <!-- Passed: primary View Result + secondary Re-take -->
+                            <div class="d-flex flex-column gap-2">
+                                <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
+                                   class="btn btn-primary w-100 fw-bold py-2">
+                                    <i class="bi bi-eye me-1"></i> View Result
+                                </a>
+                                <a href="exam.php?id=<?php echo $exam['id']; ?>"
+                                   class="btn btn-outline-secondary w-100 fw-semibold py-1 small">
                                     <i class="bi bi-arrow-repeat me-1"></i> Re-take Exam
                                 </a>
-                            <?php else: ?>
-                                <!-- Not passed / not attempted: prominent button + confirmation -->
+                            </div>
+                        <?php elseif ($has_attempted && !$is_pending): ?>
+                            <!-- Failed: primary Retry + secondary View Last Result -->
+                            <div class="d-flex flex-column gap-2">
                                 <button type="button"
                                         class="btn btn-primary w-100 fw-bold shadow-sm py-2"
                                         onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>)">
-                                    <i class="bi bi-play-fill me-1"></i> <?php echo $has_attempted ? 'Retry Exam' : 'Start Exam'; ?>
+                                    <i class="bi bi-arrow-repeat me-1"></i> Retry Exam
                                 </button>
-                            <?php endif; ?>
+                                <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
+                                   class="btn btn-outline-secondary w-100 fw-semibold py-1 small">
+                                    <i class="bi bi-eye me-1"></i> View Last Result
+                                </a>
+                            </div>
+                        <?php else: ?>
+                            <!-- Not attempted: prominent Start Exam button -->
+                            <button type="button"
+                                    class="btn btn-primary w-100 fw-bold shadow-sm py-2"
+                                    onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>)">
+                                <i class="bi bi-play-fill me-1"></i> Start Exam
+                            </button>
+                        <?php endif; ?>
                         <?php else: ?>
                             <button class="btn btn-secondary w-100 fw-bold py-2" disabled>
                                 <i class="bi bi-exclamation-circle me-1"></i> No Questions Available
