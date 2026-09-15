@@ -70,8 +70,8 @@ $exams = mysqli_query($conn, $query);
             $last_status = $exam['last_status'] ?? 'published';
             $has_attempted = $attempt_count > 0;
             $is_pending = ($has_attempted && $last_status === 'pending');
-            $passed = ($has_attempted && !$is_pending && $last_score >= 50);
-            $filter_status = (!$has_attempted || (!$passed && !$is_pending)) ? 'todo' : 'completed';
+            // Tests don't have pass/fail — completed = attempted (any score)
+            $filter_status = $has_attempted ? 'completed' : 'todo';
 
             // Schedule status
             $now_ts   = time();
@@ -119,33 +119,28 @@ $exams = mysqli_query($conn, $query);
                                         Your submission is being evaluated by your instructor.
                                     </div>
                                 <?php else: ?>
+                                    <?php $marks_obtained = ($q_count > 0) ? round($last_score * $q_count / 100) : 0; ?>
                                     <div class="d-flex justify-content-between align-items-center">
                                         <small class="text-muted fw-semibold">Last Score:</small>
-                                        <span class="fw-bold <?php echo $passed ? 'text-success' : 'text-danger'; ?>">
-                                            <?php echo $last_score; ?>%
+                                        <span class="fw-bold text-primary fs-6">
+                                            <?php echo $marks_obtained; ?> / <?php echo $q_count; ?> marks
                                         </span>
                                     </div>
-                                    <!-- Score progress bar -->
+                                    <!-- Score bar -->
                                     <div class="progress mt-2 rounded-pill" style="height:6px;">
-                                        <div class="progress-bar <?php echo $passed ? 'bg-success' : 'bg-danger'; ?>" style="width:<?php echo min(100, (int)$last_score); ?>%"></div>
+                                        <div class="progress-bar bg-primary" style="width:<?php echo min(100, (int)$last_score); ?>%"></div>
                                     </div>
                                     <div class="mt-1">
-                                        <?php if ($passed): ?>
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0.5 small">
-                                                <i class="bi bi-check-circle me-1"></i> Passed
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 small">
-                                                <i class="bi bi-x-circle me-1"></i> Failed
-                                            </span>
-                                        <?php endif; ?>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+                                            <i class="bi bi-check-circle me-1"></i> Completed
+                                        </span>
                                         <span class="text-muted small ms-1">(<?php echo $attempt_count; ?> attempt<?php echo $attempt_count > 1 ? 's' : ''; ?>)</span>
                                     </div>
                                 <?php endif; ?>
                             </div>
                         <?php else: ?>
                             <p class="text-muted small mb-3">
-                                Not attempted yet. Minimum passing score is 50%.
+                                Not attempted yet.
                             </p>
                         <?php endif; ?>
                     </div>
@@ -158,39 +153,31 @@ $exams = mysqli_query($conn, $query);
                                 <?php echo ($s_at && time() < $s_at) ? 'Not Open Yet' : 'Exam Closed'; ?>
                             </button>
                         <?php elseif ($q_count > 0): ?>
-                            <?php if ($passed): ?>
-                            <!-- Passed: primary View Result + secondary Re-take -->
-                            <div class="d-flex flex-column gap-2">
-                                <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
-                                   class="btn btn-primary w-100 fw-bold py-2">
-                                    <i class="bi bi-eye me-1"></i> View Result
-                                </a>
-                                <a href="exam.php?id=<?php echo $exam['id']; ?>"
-                                   class="btn btn-outline-secondary w-100 fw-semibold py-1 small">
-                                    <i class="bi bi-arrow-repeat me-1"></i> Re-take Exam
-                                </a>
-                            </div>
-                        <?php elseif ($has_attempted && !$is_pending): ?>
-                            <!-- Failed: primary Retry + secondary View Last Result -->
-                            <div class="d-flex flex-column gap-2">
+                            <?php if ($is_pending): ?>
+                                <!-- Pending: no action yet -->
+                                <button class="btn btn-outline-warning w-100 fw-semibold py-2" disabled>
+                                    <i class="bi bi-hourglass-split me-1"></i> Awaiting Result
+                                </button>
+                            <?php elseif ($has_attempted): ?>
+                                <!-- Attempted: View Result (primary) + Re-take (secondary) -->
+                                <div class="d-flex flex-column gap-2">
+                                    <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
+                                       class="btn btn-primary w-100 fw-bold py-2">
+                                        <i class="bi bi-eye me-1"></i> View Result
+                                    </a>
+                                    <a href="exam.php?id=<?php echo $exam['id']; ?>"
+                                       class="btn btn-outline-secondary w-100 fw-semibold py-1 small">
+                                        <i class="bi bi-arrow-repeat me-1"></i> Re-take
+                                    </a>
+                                </div>
+                            <?php else: ?>
+                                <!-- Not attempted: Start Exam -->
                                 <button type="button"
                                         class="btn btn-primary w-100 fw-bold shadow-sm py-2"
                                         onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>)">
-                                    <i class="bi bi-arrow-repeat me-1"></i> Retry Exam
+                                    <i class="bi bi-play-fill me-1"></i> Start Exam
                                 </button>
-                                <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
-                                   class="btn btn-outline-secondary w-100 fw-semibold py-1 small">
-                                    <i class="bi bi-eye me-1"></i> View Last Result
-                                </a>
-                            </div>
-                        <?php else: ?>
-                            <!-- Not attempted: prominent Start Exam button -->
-                            <button type="button"
-                                    class="btn btn-primary w-100 fw-bold shadow-sm py-2"
-                                    onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>)">
-                                <i class="bi bi-play-fill me-1"></i> Start Exam
-                            </button>
-                        <?php endif; ?>
+                            <?php endif; ?>
                         <?php else: ?>
                             <button class="btn btn-secondary w-100 fw-bold py-2" disabled>
                                 <i class="bi bi-exclamation-circle me-1"></i> No Questions Available

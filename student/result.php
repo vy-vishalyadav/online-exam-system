@@ -423,9 +423,10 @@ if (!empty($_SESSION['flash_already_submitted'])) {
     unset($_SESSION['flash_already_submitted']);
 }
 
-// Fetch all past results for this student with time taken from exam_sessions
+// Fetch all past results for this student with time taken and question count
 $stmt = mysqli_prepare($conn, "SELECT r.*, e.title AS exam_title,
-                                es.time_taken_seconds
+                                es.time_taken_seconds,
+                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = r.exam_id) AS q_count
                                 FROM results r
                                 JOIN exams e ON r.exam_id = e.id
                                 LEFT JOIN exam_sessions es
@@ -521,36 +522,36 @@ mysqli_stmt_close($stmt);
         </div>
 
     <?php else: ?>
-        <!-- Instant Submission Scorecard Banner -->
+        <!-- Scorecard Banner -->
         <div class="card shadow-lg border-0 rounded-4 mb-5 overflow-hidden">
-            <div class="card-header p-4 text-center text-white <?php echo $submission_review['passed'] ? 'bg-success' : 'bg-danger'; ?>">
+            <div class="card-header p-4 text-center text-white" style="background: linear-gradient(135deg, #1e40af, #3b82f6);">
                 <div class="mb-2">
-                    <i class="bi <?php echo $submission_review['passed'] ? 'bi-trophy-fill' : 'bi-exclamation-octagon-fill'; ?> fs-1"></i>
+                    <i class="bi bi-journal-check fs-1"></i>
                 </div>
-                <h2 class="fw-extrabold mb-1"><?php echo $submission_review['passed'] ? 'Congratulations! Exam Passed 🎉' : 'Exam Completed'; ?></h2>
-                <p class="mb-0 text-white opacity-75">Result summary for <strong><?php echo htmlspecialchars($submission_review['exam_title']); ?></strong></p>
+                <h2 class="fw-extrabold mb-1">Exam Submitted ✓</h2>
+                <p class="mb-0 text-white opacity-75">Result for <strong><?php echo htmlspecialchars($submission_review['exam_title']); ?></strong></p>
             </div>
 
             <div class="card-body p-4 p-md-5">
                 <div class="row g-4 text-center justify-content-center mb-4">
                     <div class="col-6 col-md-3">
-                        <div class="bg-light p-3 rounded-4 border">
-                            <small class="text-muted fw-semibold">Your Score</small>
-                            <h2 class="fw-extrabold <?php echo $submission_review['passed'] ? 'text-success' : 'text-danger'; ?> mb-0">
-                                <?php echo $submission_review['score']; ?>%
-                            </h2>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="bg-light p-3 rounded-4 border">
-                            <small class="text-muted fw-semibold">Correct Answers</small>
-                            <h2 class="fw-extrabold text-success mb-0">
+                        <div class="bg-primary-subtle p-3 rounded-4 border border-primary-subtle">
+                            <small class="text-muted fw-semibold">Marks Obtained</small>
+                            <h2 class="fw-extrabold text-primary mb-0">
                                 <?php echo $submission_review['correct']; ?> / <?php echo $submission_review['total']; ?>
                             </h2>
                         </div>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="bg-light p-3 rounded-4 border">
+                        <div class="bg-success-subtle p-3 rounded-4 border border-success-subtle">
+                            <small class="text-muted fw-semibold">Correct</small>
+                            <h2 class="fw-extrabold text-success mb-0">
+                                <?php echo $submission_review['correct']; ?>
+                            </h2>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="bg-danger-subtle p-3 rounded-4 border border-danger-subtle">
                             <small class="text-muted fw-semibold">Wrong / Unanswered</small>
                             <h2 class="fw-extrabold text-danger mb-0">
                                 <?php echo $submission_review['wrong']; ?>
@@ -559,14 +560,10 @@ mysqli_stmt_close($stmt);
                     </div>
                     <div class="col-6 col-md-3">
                         <div class="bg-light p-3 rounded-4 border">
-                            <small class="text-muted fw-semibold">Result Status</small>
-                            <div class="mt-1">
-                                <?php if ($submission_review['passed']): ?>
-                                    <span class="badge bg-success fs-6 px-3 py-2 rounded-pill">PASSED</span>
-                                <?php else: ?>
-                                    <span class="badge bg-danger fs-6 px-3 py-2 rounded-pill">FAILED</span>
-                                <?php endif; ?>
-                            </div>
+                            <small class="text-muted fw-semibold">Total Questions</small>
+                            <h2 class="fw-extrabold text-dark mb-0">
+                                <?php echo $submission_review['total']; ?>
+                            </h2>
                         </div>
                     </div>
                 </div>
@@ -665,7 +662,8 @@ mysqli_stmt_close($stmt);
                         $i = 1;
                         foreach ($past_results as $r):
                             $is_pending = (($r['status'] ?? 'published') === 'pending');
-                            $passed     = $r['score'] >= 50;
+                            $r_q_count  = (int)($r['q_count'] ?? 0);
+                            $r_marks    = ($r_q_count > 0) ? round($r['score'] * $r_q_count / 100) : '—';
                     ?>
                         <tr>
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
@@ -674,8 +672,8 @@ mysqli_stmt_close($stmt);
                                 <?php if ($is_pending): ?>
                                     <span class="text-muted fst-italic"><i class="bi bi-hourglass me-1"></i>Pending</span>
                                 <?php else: ?>
-                                    <span class="fw-extrabold fs-6 <?php echo $passed ? 'text-success' : 'text-danger'; ?>">
-                                        <?php echo $r['score']; ?>%
+                                    <span class="fw-extrabold fs-6 text-primary">
+                                        <?php echo $r_marks; ?> / <?php echo $r_q_count ?: '—'; ?>
                                     </span>
                                 <?php endif; ?>
                             </td>
@@ -696,13 +694,9 @@ mysqli_stmt_close($stmt);
                                     <span class="badge bg-warning text-dark border rounded-pill px-3 py-1">
                                         <i class="bi bi-hourglass-split me-1"></i> Under Review
                                     </span>
-                                <?php elseif ($passed): ?>
-                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">
-                                        <i class="bi bi-check-circle-fill me-1"></i> Passed
-                                    </span>
                                 <?php else: ?>
-                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-1 fw-bold">
-                                        <i class="bi bi-x-circle-fill me-1"></i> Failed
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
+                                        <i class="bi bi-check-circle me-1"></i> Completed
                                     </span>
                                 <?php endif; ?>
                             </td>
