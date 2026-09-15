@@ -78,8 +78,21 @@ mysqli_stmt_close($sess_check);
 
 $is_fresh_session = false;
 
+// ── Single Attempt Enforcement (College Rule: No Retakes) ────────────────────
+$chk_res = mysqli_prepare($conn, "SELECT id FROM results WHERE student_id=? AND exam_id=? LIMIT 1");
+mysqli_stmt_bind_param($chk_res, "ii", $student_id, $exam_id);
+mysqli_stmt_execute($chk_res);
+$has_result = mysqli_fetch_assoc(mysqli_stmt_get_result($chk_res));
+mysqli_stmt_close($chk_res);
+
+if ($has_result || ($sess_row && (int)$sess_row['submitted'] === 1)) {
+    // Student already submitted — redirect to scorecard
+    header("Location: result.php?view_exam_id={$exam_id}&already_submitted=1");
+    exit;
+}
+
 if (!$sess_row) {
-    // First attempt — create session
+    // First entry — create session record
     $ins = mysqli_prepare($conn,
         "INSERT INTO exam_sessions (student_id, exam_id, started_at, duration_minutes, question_seed, submitted)
          VALUES (?, ?, NOW(), ?, ?, 0)");
@@ -87,49 +100,12 @@ if (!$sess_row) {
     mysqli_stmt_execute($ins);
     mysqli_stmt_close($ins);
     $is_fresh_session = true;
-} elseif ($sess_row['submitted']) {
-    // Previous attempt was submitted — start a fresh session for retake
-    // Reset core fields first (always works even if time_taken_seconds column is missing)
-    $reset = mysqli_prepare($conn,
-        "UPDATE exam_sessions SET started_at=NOW(), duration_minutes=?, question_seed=?, submitted=0
-         WHERE student_id=? AND exam_id=?");
-    mysqli_stmt_bind_param($reset, "isii", $duration, $seed_string, $student_id, $exam_id);
-    mysqli_stmt_execute($reset);
-    mysqli_stmt_close($reset);
-    // Reset time_taken_seconds separately — silently ignored if column doesn't exist yet
-    @mysqli_query($conn, "UPDATE exam_sessions SET time_taken_seconds=NULL
-                          WHERE student_id=$student_id AND exam_id=$exam_id");
-    // Clear old draft answers so retake starts clean
-    $cdel = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
-    mysqli_stmt_bind_param($cdel, "ii", $student_id, $exam_id);
-    mysqli_stmt_execute($cdel);
-    mysqli_stmt_close($cdel);
-    $is_fresh_session = true;
 } else {
-    // In-progress session (submitted=0) — check if it has already expired in MySQL's time
-    $stale_elapsed = max(0, (int)($sess_row['elapsed_seconds'] ?? 0));
-    $stale_total   = (int)$duration * 60;
-    if ($stale_elapsed >= $stale_total) {
-        // Session has expired without being submitted — treat as a fresh start
-        $reset_stale = mysqli_prepare($conn,
-            "UPDATE exam_sessions SET started_at=NOW(), duration_minutes=?, question_seed=?, submitted=0
-             WHERE student_id=? AND exam_id=?");
-        mysqli_stmt_bind_param($reset_stale, "isii", $duration, $seed_string, $student_id, $exam_id);
-        mysqli_stmt_execute($reset_stale);
-        mysqli_stmt_close($reset_stale);
-        @mysqli_query($conn, "UPDATE exam_sessions SET time_taken_seconds=NULL
-                              WHERE student_id=$student_id AND exam_id=$exam_id");
-        // Clear stale draft answers so the fresh attempt starts clean
-        $cdel2 = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
-        mysqli_stmt_bind_param($cdel2, "ii", $student_id, $exam_id);
-        mysqli_stmt_execute($cdel2);
-        mysqli_stmt_close($cdel2);
-        $is_fresh_session = true;
-    }
-    // else: genuinely in-progress and not yet expired — resume normally
+    // Resuming active in-progress attempt
+    $is_fresh_session = false;
 }
 
-// Fetch session (guaranteed to exist now) using TIMESTAMPDIFF on MySQL's internal clock
+// Fetch session using TIMESTAMPDIFF on MySQL's internal clock
 $sess_stmt = mysqli_prepare($conn,
     "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, question_seed, submitted
      FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
@@ -138,27 +114,39 @@ mysqli_stmt_execute($sess_stmt);
 $session = mysqli_fetch_assoc(mysqli_stmt_get_result($sess_stmt));
 mysqli_stmt_close($sess_stmt);
 
-// Calculate remaining seconds (server-authoritative via MySQL clock)
+// Calculate remaining seconds (server-authoritative)
 $dur_mins      = (int)($session['duration_minutes'] ?? 0);
-if ($dur_mins <= 0) $dur_mins = (int)$duration; // Fallback to exam duration
-$total_seconds = $dur_mins * 60;
+if ($dur_mins <= 0) $dur_mins = (int)$duration;
+$personal_total_sec = $dur_mins * 60;
+$elapsed_sec        = max(0, (int)($session['elapsed_seconds'] ?? 0));
+$personal_rem_sec   = max(0, $personal_total_sec - $elapsed_sec);
 
-if ($is_fresh_session) {
-    // Brand-new start or reset retake: guaranteed full duration
-    $remaining_sec = $total_seconds;
+// Synchronous Schedule Window Calculation:
+// If exam has end_at, EVERY student's timer is strictly bounded by end_at
+$window_rem_sec = null;
+if (!empty($exam['end_at'])) {
+    $end_stmt = mysqli_prepare($conn, "SELECT TIMESTAMPDIFF(SECOND, NOW(), end_at) AS rem_sec FROM exams WHERE id=?");
+    mysqli_stmt_bind_param($end_stmt, "i", $exam_id);
+    mysqli_stmt_execute($end_stmt);
+    $end_res = mysqli_fetch_assoc(mysqli_stmt_get_result($end_stmt));
+    mysqli_stmt_close($end_stmt);
+    $window_rem_sec = (int)($end_res['rem_sec'] ?? 0);
+}
+
+if ($window_rem_sec !== null) {
+    // Strict college schedule: timer counts down to end_at
+    $remaining_sec = max(0, min($personal_rem_sec, $window_rem_sec));
 } else {
-    $elapsed       = max(0, (int)($session['elapsed_seconds'] ?? 0));
-    $remaining_sec = max(0, $total_seconds - $elapsed);
+    $remaining_sec = $personal_rem_sec;
+}
 
-    // If genuinely expired mid-exam (with 5-second grace buffer), auto-submit via redirect
-    if ($remaining_sec === 0 && $elapsed >= ($total_seconds + 5)) {
-        header("Location: result.php?timeout=1&exam_id={$exam_id}");
-        exit;
-    }
-    // If between 0 and 5s grace, give at least 1s on render
-    if ($remaining_sec <= 0) {
-        $remaining_sec = 1;
-    }
+// If time is expired (with 5-second grace), auto-submit immediately
+if ($remaining_sec <= 0 && ($elapsed_sec >= ($personal_total_sec + 5) || ($window_rem_sec !== null && $window_rem_sec <= -5))) {
+    header("Location: result.php?timeout=1&exam_id={$exam_id}");
+    exit;
+}
+if ($remaining_sec <= 0) {
+    $remaining_sec = 1;
 }
 
 // ── Check existing violations for this student + exam ─────────────────────────

@@ -25,7 +25,9 @@ $query = "SELECT e.*,
             (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
             (SELECT score  FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
             (SELECT status FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
-            (SELECT COUNT(*) FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id) AS attempt_count
+            (SELECT COUNT(*) FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id) AS attempt_count,
+            (SELECT es.submitted FROM exam_sessions es WHERE es.student_id = $student_id AND es.exam_id = e.id LIMIT 1) AS session_submitted,
+            (SELECT es.started_at FROM exam_sessions es WHERE es.student_id = $student_id AND es.exam_id = e.id LIMIT 1) AS session_started_at
           FROM exams e
           WHERE (
               NOT EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id)
@@ -65,13 +67,12 @@ $exams = mysqli_query($conn, $query);
     <?php if ($exams && mysqli_num_rows($exams) > 0): ?>
         <?php while ($exam = mysqli_fetch_assoc($exams)): 
             $q_count = (int)$exam['q_count'];
-            $attempt_count = (int)$exam['attempt_count'];
-            $last_score = $exam['last_score'];
-            $last_status = $exam['last_status'] ?? 'published';
-            $has_attempted = $attempt_count > 0;
-            $is_pending = ($has_attempted && $last_status === 'pending');
-            // Tests don't have pass/fail — completed = attempted (any score)
-            $filter_status = $has_attempted ? 'completed' : 'todo';
+            $session_submitted = (int)($exam['session_submitted'] ?? 0);
+            $session_started   = !empty($exam['session_started_at']);
+            $is_submitted      = ($has_attempted || $session_submitted === 1);
+            $is_in_progress    = ($session_started && $session_submitted === 0);
+            $is_pending        = ($is_submitted && $last_status === 'pending');
+            $filter_status     = $is_submitted ? 'completed' : 'todo';
 
             // Schedule status
             $now_ts   = time();
@@ -84,7 +85,7 @@ $exams = mysqli_query($conn, $query);
                 $sched_badge  = '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1 small"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, h:i A', $s_at) . '</span>';
             } elseif ($e_at && $now_ts > $e_at) {
                 $sched_locked = true;
-                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2 py-1 small"><i class="bi bi-lock me-1"></i>Closed ' . date('d M', $e_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2 py-1 small"><i class="bi bi-lock me-1"></i>Closed ' . date('d M, h:i A', $e_at) . '</span>';
             } elseif ($s_at && $e_at) {
                 $sched_badge  = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small"><i class="bi bi-broadcast me-1"></i>Live until ' . date('h:i A', $e_at) . '</span>';
             }
@@ -106,7 +107,7 @@ $exams = mysqli_query($conn, $query);
 
                         <h5 class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($exam['title']); ?></h5>
                         
-                        <?php if ($has_attempted): ?>
+                        <?php if ($is_submitted): ?>
                             <div class="bg-light p-3 rounded-3 mb-3 border">
                                 <?php if ($is_pending): ?>
                                     <div class="d-flex justify-content-between align-items-center">
@@ -121,7 +122,7 @@ $exams = mysqli_query($conn, $query);
                                 <?php else: ?>
                                     <?php $marks_obtained = ($q_count > 0) ? round($last_score * $q_count / 100) : 0; ?>
                                     <div class="d-flex justify-content-between align-items-center">
-                                        <small class="text-muted fw-semibold">Last Score:</small>
+                                        <small class="text-muted fw-semibold">Final Score:</small>
                                         <span class="fw-bold text-primary fs-6">
                                             <?php echo $marks_obtained; ?> / <?php echo $q_count; ?> marks
                                         </span>
@@ -130,48 +131,58 @@ $exams = mysqli_query($conn, $query);
                                     <div class="progress mt-2 rounded-pill" style="height:6px;">
                                         <div class="progress-bar bg-primary" style="width:<?php echo min(100, (int)$last_score); ?>%"></div>
                                     </div>
-                                    <div class="mt-1">
-                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
-                                            <i class="bi bi-check-circle me-1"></i> Completed
+                                    <div class="mt-2">
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small fw-bold">
+                                            <i class="bi bi-check-circle-fill me-1"></i> Submitted
                                         </span>
-                                        <span class="text-muted small ms-1">(<?php echo $attempt_count; ?> attempt<?php echo $attempt_count > 1 ? 's' : ''; ?>)</span>
                                     </div>
                                 <?php endif; ?>
                             </div>
+                        <?php elseif ($is_in_progress && !$sched_locked): ?>
+                            <div class="bg-warning-subtle p-3 rounded-3 mb-3 border border-warning-subtle">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="badge bg-warning text-dark border rounded-pill px-2.5 py-1 fw-bold">
+                                        <i class="bi bi-hourglass-split me-1"></i> In Progress
+                                    </span>
+                                    <small class="text-muted fw-semibold">Session active</small>
+                                </div>
+                                <div class="mt-2 text-dark small">
+                                    You have an ongoing attempt. Draft answers are saved.
+                                </div>
+                            </div>
                         <?php else: ?>
                             <p class="text-muted small mb-3">
-                                Not attempted yet.
+                                Not started yet.
                             </p>
                         <?php endif; ?>
                     </div>
 
                     <div>
-                        <?php if ($sched_locked): ?>
-                            <!-- Schedule locked: disabled button -->
-                            <button class="btn btn-secondary w-100 fw-bold py-2" disabled>
-                                <i class="bi bi-lock me-1"></i>
-                                <?php echo ($s_at && time() < $s_at) ? 'Not Open Yet' : 'Exam Closed'; ?>
-                            </button>
-                        <?php elseif ($q_count > 0): ?>
+                        <?php if ($is_submitted): ?>
                             <?php if ($is_pending): ?>
-                                <!-- Pending: no action yet -->
                                 <button class="btn btn-outline-warning w-100 fw-semibold py-2" disabled>
                                     <i class="bi bi-hourglass-split me-1"></i> Awaiting Result
                                 </button>
-                            <?php elseif ($has_attempted): ?>
-                                <!-- Attempted: View Result (primary) + Re-take (secondary) -->
-                                <div class="d-flex flex-column gap-2">
-                                    <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
-                                       class="btn btn-primary w-100 fw-bold py-2">
-                                        <i class="bi bi-eye me-1"></i> View Result
-                                    </a>
-                                    <a href="exam.php?id=<?php echo $exam['id']; ?>"
-                                       class="btn btn-outline-secondary w-100 fw-semibold py-1 small">
-                                        <i class="bi bi-arrow-repeat me-1"></i> Re-take
-                                    </a>
-                                </div>
                             <?php else: ?>
-                                <!-- Not attempted: Start Exam -->
+                                <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
+                                   class="btn btn-primary w-100 fw-bold py-2">
+                                    <i class="bi bi-eye me-1"></i> View Result
+                                </a>
+                            <?php endif; ?>
+                        <?php elseif ($sched_locked): ?>
+                            <button class="btn btn-secondary w-100 fw-bold py-2" disabled>
+                                <i class="bi bi-lock me-1"></i>
+                                <?php echo ($s_at && $now_ts < $s_at) ? 'Not Open Yet' : 'Exam Closed'; ?>
+                            </button>
+                        <?php elseif ($q_count > 0): ?>
+                            <?php if ($is_in_progress): ?>
+                                <!-- Active Session: Resume Exam -->
+                                <a href="exam.php?id=<?php echo $exam['id']; ?>"
+                                   class="btn btn-warning text-dark w-100 fw-bold shadow-sm py-2">
+                                    <i class="bi bi-play-circle-fill me-1"></i> Resume Exam
+                                </a>
+                            <?php else: ?>
+                                <!-- Not started: Start Exam -->
                                 <button type="button"
                                         class="btn btn-primary w-100 fw-bold shadow-sm py-2"
                                         onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>)">
@@ -225,8 +236,8 @@ $exams = mysqli_query($conn, $query);
                     </div>
                 </div>
                 <div class="alert alert-warning d-flex gap-2 rounded-3 mb-0 small">
-                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
-                    <div>The timer starts immediately when you click <strong>Begin Exam</strong>. Make sure you are ready and have a stable internet connection.</div>
+                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1 text-warning"></i>
+                    <div>This exam is strictly schedule-based. The countdown runs continuously until the scheduled closing time for all students. Ensure you have a stable connection before clicking <strong>Begin Exam</strong>.</div>
                 </div>
             </div>
             <div class="modal-footer border-0 pt-0">

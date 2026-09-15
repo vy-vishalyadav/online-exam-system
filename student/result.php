@@ -421,6 +421,8 @@ $already_submitted_msg = "";
 if (!empty($_SESSION['flash_already_submitted'])) {
     $already_submitted_msg = $_SESSION['flash_already_submitted'];
     unset($_SESSION['flash_already_submitted']);
+} elseif (isset($_GET['already_submitted'])) {
+    $already_submitted_msg = "You have already completed and submitted this examination. In accordance with collegiate academic policy, re-attempts are not permitted.";
 }
 
 // Fetch all past results for this student with time taken and question count

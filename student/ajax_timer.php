@@ -20,9 +20,13 @@ if (!$exam_id) {
 }
 
 $stmt = mysqli_prepare($conn,
-    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, submitted
-     FROM exam_sessions
-     WHERE student_id = ? AND exam_id = ? LIMIT 1");
+    "SELECT es.duration_minutes, es.submitted,
+            TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
+            e.end_at,
+            TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
+     FROM exam_sessions es
+     JOIN exams e ON e.id = es.exam_id
+     WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
 
 if (!$stmt) {
     echo json_encode(['ok' => false, 'error' => 'db_error']);
@@ -47,6 +51,13 @@ if ($sess['submitted']) {
 
 $elapsed   = max(0, (int)($sess['elapsed_seconds'] ?? 0));
 $total_sec = (int)$sess['duration_minutes'] * 60;
-$remaining = max(0, $total_sec - $elapsed);
+$personal_remaining = max(0, $total_sec - $elapsed);
+
+if (!empty($sess['end_at'])) {
+    $window_rem = (int)($sess['window_rem_sec'] ?? 0);
+    $remaining  = max(0, min($personal_remaining, $window_rem));
+} else {
+    $remaining  = $personal_remaining;
+}
 
 echo json_encode(['ok' => true, 'remaining' => $remaining, 'submitted' => false]);

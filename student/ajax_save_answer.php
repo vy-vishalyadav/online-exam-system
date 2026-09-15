@@ -34,11 +34,15 @@ if (strlen($answer) > 5000) {
     $answer = substr($answer, 0, 5000);
 }
 
-// Validate exam session hasn't timed out (server-side check)
+// Validate exam session hasn't timed out and schedule window hasn't closed (server-side check)
 $sess_stmt = mysqli_prepare($conn,
-    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, submitted
-     FROM exam_sessions
-     WHERE student_id = ? AND exam_id = ? LIMIT 1");
+    "SELECT es.duration_minutes, es.submitted,
+            TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
+            e.end_at,
+            TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
+     FROM exam_sessions es
+     JOIN exams e ON e.id = es.exam_id
+     WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
 if ($sess_stmt) {
     mysqli_stmt_bind_param($sess_stmt, "ii", $student_id, $exam_id);
     mysqli_stmt_execute($sess_stmt);
@@ -49,6 +53,11 @@ if ($sess_stmt) {
     if ($sess) {
         if ($sess['submitted']) {
             echo json_encode(['ok' => false, 'error' => 'already_submitted']);
+            exit;
+        }
+        // Strict schedule deadline check: if end_at passed by > 15s grace period
+        if (!empty($sess['end_at']) && isset($sess['window_rem_sec']) && (int)$sess['window_rem_sec'] < -15) {
+            echo json_encode(['ok' => false, 'error' => 'exam_window_closed']);
             exit;
         }
         $elapsed  = max(0, (int)($sess['elapsed_seconds'] ?? 0));

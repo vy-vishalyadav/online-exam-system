@@ -55,11 +55,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
             $error = "Exam Title is required.";
         } elseif (strlen($title) > 200) {
             $error = "Exam title is too long (max 200 characters).";
-        } elseif ($duration < 1 || $duration > 600) {
-            $error = "Duration must be between 1 and 600 minutes.";
-        } elseif ($start_at && $end_at && strtotime($end_at) <= strtotime($start_at)) {
-            $error = "End time must be after start time.";
+        } elseif (empty($start_at) || empty($end_at)) {
+            $error = "Exam Schedule (Opens At and Closes At) is required for scheduled college exams.";
+        } elseif (strtotime($end_at) <= strtotime($start_at)) {
+            $error = "Closes At must be after Opens At.";
         } else {
+            // Auto-calculate exact duration from schedule window
+            $calc_dur = (int)round((strtotime($end_at) - strtotime($start_at)) / 60);
+            if ($calc_dur >= 1) {
+                $duration = $calc_dur;
+            }
             $stmt = mysqli_prepare($conn, "INSERT INTO exams (title, duration_minutes, result_mode, start_at, end_at) VALUES (?, ?, ?, ?, ?)");
             if ($stmt) {
                 mysqli_stmt_bind_param($stmt, "sisss", $title, $duration, $result_mode, $start_at, $end_at);
@@ -107,11 +112,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
             $error = "Exam Title is required.";
         } elseif (strlen($title) > 200) {
             $error = "Exam title is too long (max 200 characters).";
-        } elseif ($duration < 1 || $duration > 600) {
-            $error = "Duration must be between 1 and 600 minutes.";
-        } elseif ($start_at && $end_at && strtotime($end_at) <= strtotime($start_at)) {
-            $error = "End time must be after start time.";
+        } elseif (empty($start_at) || empty($end_at)) {
+            $error = "Exam Schedule (Opens At and Closes At) is required for scheduled college exams.";
+        } elseif (strtotime($end_at) <= strtotime($start_at)) {
+            $error = "Closes At must be after Opens At.";
         } else {
+            // Auto-calculate exact duration from schedule window
+            $calc_dur = (int)round((strtotime($end_at) - strtotime($start_at)) / 60);
+            if ($calc_dur >= 1) {
+                $duration = $calc_dur;
+            }
             $stmt = mysqli_prepare($conn, "UPDATE exams SET title=?, duration_minutes=?, result_mode=?, start_at=?, end_at=? WHERE id=?");
             if ($stmt) {
                 mysqli_stmt_bind_param($stmt, "sisssi", $title, $duration, $result_mode, $start_at, $end_at, $exam_id);
@@ -314,8 +324,9 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                                         <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($e['title']); ?>" required maxlength="200">
                                                     </div>
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Duration (minutes)</label>
-                                                        <input type="number" name="duration_minutes" class="form-control" min="1" max="600" value="<?php echo (int)$e['duration_minutes']; ?>" required>
+                                                        <label class="form-label fw-semibold">Duration (minutes) <span class="text-danger">*</span></label>
+                                                        <input type="number" name="duration_minutes" id="edit_dur_<?php echo $e['id']; ?>" class="form-control edit-dur-input" min="1" max="600" value="<?php echo (int)$e['duration_minutes']; ?>" required>
+                                                        <div class="form-text">Auto-syncs with Opens At and Closes At</div>
                                                     </div>
                                                     <div class="mb-3">
                                                         <label class="form-label fw-semibold">Result Release Mode</label>
@@ -328,19 +339,19 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                                         </div>
                                                     </div>
                                                     <hr class="my-3">
-                                                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-calendar-range me-1"></i> EXAM SCHEDULE (optional)</p>
+                                                    <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
                                                     <div class="row g-3">
                                                         <div class="col-md-6">
-                                                            <label class="form-label fw-semibold">Opens At</label>
-                                                            <input type="datetime-local" name="start_at" class="form-control"
-                                                                value="<?php echo $e['start_at'] ? date('Y-m-d\TH:i', strtotime($e['start_at'])) : ''; ?>">
-                                                            <div class="form-text">Leave blank = always accessible</div>
+                                                            <label class="form-label fw-semibold">Opens At <span class="text-danger">*</span></label>
+                                                            <input type="datetime-local" name="start_at" id="edit_start_<?php echo $e['id']; ?>" class="form-control edit-start-input" data-exam-id="<?php echo $e['id']; ?>"
+                                                                value="<?php echo $e['start_at'] ? date('Y-m-d\TH:i', strtotime($e['start_at'])) : ''; ?>" required>
+                                                            <div class="form-text">When all students can begin</div>
                                                         </div>
                                                         <div class="col-md-6">
-                                                            <label class="form-label fw-semibold">Closes At</label>
-                                                            <input type="datetime-local" name="end_at" class="form-control"
-                                                                value="<?php echo $e['end_at'] ? date('Y-m-d\TH:i', strtotime($e['end_at'])) : ''; ?>">
-                                                            <div class="form-text">Students locked out after this</div>
+                                                            <label class="form-label fw-semibold">Closes At <span class="text-danger">*</span></label>
+                                                            <input type="datetime-local" name="end_at" id="edit_end_<?php echo $e['id']; ?>" class="form-control edit-end-input" data-exam-id="<?php echo $e['id']; ?>"
+                                                                value="<?php echo $e['end_at'] ? date('Y-m-d\TH:i', strtotime($e['end_at'])) : ''; ?>" required>
+                                                            <div class="form-text">Strict synchronized deadline for all students</div>
                                                         </div>
                                                     </div>
                                                     <hr class="my-3">
@@ -404,8 +415,9 @@ $exams = mysqli_query($conn, "SELECT e.*,
                         <input type="text" name="title" class="form-control" placeholder="e.g. Science &amp; Technology Quiz" required maxlength="200">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Duration (minutes)</label>
-                        <input type="number" name="duration_minutes" class="form-control" min="1" max="600" value="30" required>
+                        <label class="form-label fw-semibold">Duration (minutes) <span class="text-danger">*</span></label>
+                        <input type="number" name="duration_minutes" id="add_duration" class="form-control" min="1" max="600" value="30" required>
+                        <div class="form-text">Auto-syncs with Opens At and Closes At</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Result Release Mode</label>
@@ -418,17 +430,17 @@ $exams = mysqli_query($conn, "SELECT e.*,
                         </div>
                     </div>
                     <hr class="my-3">
-                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-calendar-range me-1"></i> EXAM SCHEDULE (optional)</p>
+                    <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">Opens At</label>
-                            <input type="datetime-local" name="start_at" class="form-control">
-                            <div class="form-text">Leave blank = always accessible</div>
+                            <label class="form-label fw-semibold">Opens At <span class="text-danger">*</span></label>
+                            <input type="datetime-local" name="start_at" id="add_start_at" class="form-control" required>
+                            <div class="form-text">When all students can begin</div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">Closes At</label>
-                            <input type="datetime-local" name="end_at" class="form-control">
-                            <div class="form-text">Students locked out after this</div>
+                            <label class="form-label fw-semibold">Closes At <span class="text-danger">*</span></label>
+                            <input type="datetime-local" name="end_at" id="add_end_at" class="form-control" required>
+                            <div class="form-text">Strict synchronized deadline for all students</div>
                         </div>
                     </div>
                     <hr class="my-3">
@@ -455,16 +467,82 @@ $exams = mysqli_query($conn, "SELECT e.*,
     </div>
 </div>
 
-<?php 
-// Open add modal automatically if requested via URL action=new
-if (isset($_GET['action']) && $_GET['action'] === 'new'): 
-?>
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        var modal = new bootstrap.Modal(document.getElementById('addExamModal'));
-        modal.show();
+document.addEventListener("DOMContentLoaded", function() {
+    const startIn = document.getElementById('add_start_at');
+    const endIn   = document.getElementById('add_end_at');
+    const durIn   = document.getElementById('add_duration');
+
+    function syncSchedule() {
+        if (!startIn || !endIn || !durIn) return;
+        if (startIn.value && durIn.value) {
+            const startDate = new Date(startIn.value);
+            if (!isNaN(startDate.getTime())) {
+                const durationMs = parseInt(durIn.value, 10) * 60 * 1000;
+                const endDate = new Date(startDate.getTime() + durationMs);
+                const offset = endDate.getTimezoneOffset() * 60000;
+                const localISOTime = (new Date(endDate.getTime() - offset)).toISOString().slice(0, 16);
+                endIn.value = localISOTime;
+            }
+        }
+    }
+
+    if (startIn) startIn.addEventListener('change', syncSchedule);
+    if (durIn)   durIn.addEventListener('input', syncSchedule);
+    if (endIn) {
+        endIn.addEventListener('change', function() {
+            if (startIn.value && endIn.value) {
+                const s = new Date(startIn.value);
+                const e = new Date(endIn.value);
+                if (e > s) {
+                    const diffMins = Math.round((e - s) / 60000);
+                    if (durIn) durIn.value = diffMins;
+            }
+        });
+    }
+
+    // Sync schedule for all edit modals
+    document.querySelectorAll('.edit-start-input').forEach(function(startIn) {
+        const id = startIn.dataset.examId;
+        const endIn = document.getElementById('edit_end_' + id);
+        const durIn = document.getElementById('edit_dur_' + id);
+
+        function syncEdit() {
+            if (!startIn || !endIn || !durIn) return;
+            if (startIn.value && durIn.value) {
+                const startDate = new Date(startIn.value);
+                if (!isNaN(startDate.getTime())) {
+                    const durationMs = parseInt(durIn.value, 10) * 60 * 1000;
+                    const endDate = new Date(startDate.getTime() + durationMs);
+                    const offset = endDate.getTimezoneOffset() * 60000;
+                    endIn.value = (new Date(endDate.getTime() - offset)).toISOString().slice(0, 16);
+                }
+            }
+        }
+
+        startIn.addEventListener('change', syncEdit);
+        if (durIn) durIn.addEventListener('input', syncEdit);
+        if (endIn) {
+            endIn.addEventListener('change', function() {
+                if (startIn.value && endIn.value) {
+                    const s = new Date(startIn.value);
+                    const e = new Date(endIn.value);
+                    if (e > s) {
+                        durIn.value = Math.round((e - s) / 60000);
+                    }
+                }
+            });
+        }
     });
+
+    <?php if (isset($_GET['action']) && $_GET['action'] === 'new'): ?>
+    var addModalEl = document.getElementById('addExamModal');
+    if (addModalEl) {
+        var modal = new bootstrap.Modal(addModalEl);
+        modal.show();
+    }
+    <?php endif; ?>
+});
 </script>
-<?php endif; ?>
 
 <?php include '../includes/footer.php'; ?>
