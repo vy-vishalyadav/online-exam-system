@@ -322,3 +322,8 @@ footer {
     padding: 1.25rem 0 !important;
     margin-top: auto !important;
 }
+
+.dropdown-toggle.no-caret::after {
+    display: none !important;
+}
+

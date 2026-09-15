@@ -169,12 +169,12 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                     <?php elseif ($is_student): ?>
                         <!-- Student profile dropdown -->
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-light border rounded-pill px-3 d-flex align-items-center gap-2 fw-semibold" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <button class="btn btn-sm btn-light border rounded-pill px-3 d-flex align-items-center gap-2 fw-semibold dropdown-toggle no-caret" id="studentProfileDropdown" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-person-circle text-info"></i>
                                 <?php echo htmlspecialchars($_SESSION['student_name']); ?>
                                 <i class="bi bi-chevron-down small"></i>
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3 mt-1">
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3 mt-1" aria-labelledby="studentProfileDropdown">
                                 <li>
                                     <a class="dropdown-item <?php echo ($current_page === 'change-password.php') ? 'active' : ''; ?>" href="change-password.php">
                                         <i class="bi bi-key me-2 text-primary"></i> Change Password
