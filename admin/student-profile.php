@@ -240,7 +240,8 @@ $avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($
                     $vmap = [
                         'tab_switch'      => ['danger',    'bi-box-arrow-up-right', 'Tab Switch'],
                         'fullscreen_exit' => ['warning',   'bi-fullscreen-exit',    'Fullscreen Exit'],
-                        'blocked_key'     => ['secondary', 'bi-keyboard',           'Blocked Key'],
+                        'exit_exam'       => ['danger',    'bi-door-open-fill',     'Exited Exam'],
+                        'blocked_key'     => ['secondary', 'bi-slash-circle',       'Blocked Action'],
                     ];
                     foreach ($violations as $v):
                         $b = $vmap[$v['violation_type']] ?? ['dark', 'bi-question', $v['violation_type']];

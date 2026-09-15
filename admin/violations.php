@@ -46,7 +46,7 @@ if ($stmt) {
 // Summary: top offenders
 $summary_sql = "SELECT v.student_id, s.name, s.email, e.title AS exam_title, v.exam_id,
                        COUNT(*) AS total,
-                       SUM(v.violation_type IN ('tab_switch','fullscreen_exit')) AS serious
+                       SUM(v.violation_type IN ('tab_switch','fullscreen_exit','exit_exam')) AS serious
                 FROM exam_violations v
                 JOIN students s ON v.student_id=s.id
                 JOIN exams e ON v.exam_id=e.id
@@ -144,7 +144,8 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                     <option value="">All Types</option>
                     <option value="tab_switch"      <?php echo ($filter_type==='tab_switch')      ? 'selected':''; ?>>Tab Switch</option>
                     <option value="fullscreen_exit" <?php echo ($filter_type==='fullscreen_exit') ? 'selected':''; ?>>Fullscreen Exit</option>
-                    <option value="blocked_key"     <?php echo ($filter_type==='blocked_key')     ? 'selected':''; ?>>Blocked Key</option>
+                    <option value="exit_exam"       <?php echo ($filter_type==='exit_exam')       ? 'selected':''; ?>>Exited Exam</option>
+                    <option value="blocked_key"     <?php echo ($filter_type==='blocked_key')     ? 'selected':''; ?>>Blocked Action</option>
                 </select>
             </div>
             <div class="col-md-auto">
@@ -192,7 +193,8 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                             $badge = match($v['violation_type']) {
                                 'tab_switch'      => ['bg-danger',  'bi-box-arrow-up-right', 'Tab Switch'],
                                 'fullscreen_exit' => ['bg-warning text-dark', 'bi-fullscreen-exit', 'Fullscreen Exit'],
-                                'blocked_key'     => ['bg-secondary', 'bi-keyboard', 'Blocked Key'],
+                                'exit_exam'       => ['bg-danger',  'bi-door-open-fill',     'Exited Exam'],
+                                'blocked_key'     => ['bg-secondary', 'bi-slash-circle',     'Blocked Action'],
                                 default           => ['bg-dark', 'bi-question', $v['violation_type']],
                             };
                     ?>

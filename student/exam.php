@@ -166,7 +166,7 @@ if ($is_fresh_session) {
 
     $v_stmt = mysqli_prepare($conn,
         "SELECT COUNT(*) AS v_count FROM exam_violations 
-         WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit')");
+         WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
     mysqli_stmt_bind_param($v_stmt, "ii", $student_id, $exam_id);
     mysqli_stmt_execute($v_stmt);
     $v_row = mysqli_fetch_assoc(mysqli_stmt_get_result($v_stmt));
@@ -495,12 +495,18 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                                   id="desc_<?php echo $q_id; ?>"
                                   class="form-control descriptive-input p-3 shadow-sm rounded-3"
                                   rows="5"
-                                  placeholder="Type your answer here..."
+                                  placeholder="Type your answer here manually..."
                                   maxlength="5000"
                                   data-qid="<?php echo $q_id; ?>"
+                                  oncopy="return false;"
+                                  oncut="return false;"
+                                  onpaste="return false;"
+                                  autocomplete="off"
+                                  spellcheck="false"
                                   oninput="scheduleAutoSave(<?php echo $q_id; ?>, this.value)"><?php echo htmlspecialchars($draft); ?></textarea>
-                        <div class="text-end small text-muted mt-1">
-                            <span id="chars_<?php echo $q_id; ?>"><?php echo strlen($draft); ?></span>/5000
+                        <div class="d-flex justify-content-between align-items-center mt-1">
+                            <span class="small text-muted"><i class="bi bi-shield-lock me-1 text-danger"></i> Copy &amp; paste strictly disabled</span>
+                            <span class="small text-muted"><span id="chars_<?php echo $q_id; ?>"><?php echo strlen($draft); ?></span>/5000</span>
                         </div>
                     </div>
                 <?php else: ?>
@@ -608,7 +614,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 // Log the voluntary exit as an integrity violation strike
                 const fd = new FormData();
                 fd.append('exam_id',    EXAM_ID);
-                fd.append('type',       'tab_switch');
+                fd.append('type',       'exit_exam');
                 fd.append('detail',     'Voluntarily exited exam to dashboard before submitting');
                 fd.append('csrf_token', CSRF_TOKEN);
 
@@ -1044,53 +1050,98 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         logViolation('blocked_key', 'right-click context menu');
     });
 
-    // ── Block dangerous keyboard shortcuts ────────────────────────────────────
+    // ── Block dangerous keyboard shortcuts & Copy/Paste/Cut ───────────────────
     const BLOCKED_KEYS = new Set([
         'F12',                           // DevTools
-        'F5',                            // Refresh (during exam only)
+        'F5',                            // Refresh
         'PrintScreen',                   // Screenshot
     ]);
-    const BLOCKED_COMBOS = [
-        { ctrl: true,  shift: true,  key: 'I' },  // Ctrl+Shift+I (DevTools)
-        { ctrl: true,  shift: true,  key: 'J' },  // Ctrl+Shift+J (Console)
-        { ctrl: true,  shift: true,  key: 'C' },  // Ctrl+Shift+C (Inspect)
-        { ctrl: true,  shift: false, key: 'U' },  // Ctrl+U (View Source)
-        { ctrl: true,  shift: false, key: 'S' },  // Ctrl+S (Save page)
-        { ctrl: true,  shift: false, key: 'P' },  // Ctrl+P (Print)
-        { ctrl: true,  shift: false, key: 'A' },  // Ctrl+A (Select all)
-    ];
+
+    // Toast notification for blocked actions (subtle in-page banner)
+    let blockToastTimer = null;
+    function notifyBlockedAction(msg) {
+        let toastEl = document.getElementById('blockedActionToast');
+        if (!toastEl) {
+            toastEl = document.createElement('div');
+            toastEl.id = 'blockedActionToast';
+            toastEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(220,53,69,0.95);color:#fff;padding:10px 22px;border-radius:50px;font-size:14px;font-weight:600;z-index:999999;box-shadow:0 4px 15px rgba(0,0,0,0.3);pointer-events:none;transition:opacity 0.3s ease;';
+            document.body.appendChild(toastEl);
+        }
+        toastEl.innerHTML = `<i class="bi bi-shield-x me-2"></i> ${msg}`;
+        toastEl.style.opacity = '1';
+        clearTimeout(blockToastTimer);
+        blockToastTimer = setTimeout(() => {
+            if (toastEl) toastEl.style.opacity = '0';
+        }, 2200);
+    }
 
     document.addEventListener('keydown', e => {
+        const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+        const keyUpper     = (e.key || '').toUpperCase();
+
         // Single blocked keys
         if (BLOCKED_KEYS.has(e.key)) {
             e.preventDefault();
+            e.stopPropagation();
+            notifyBlockedAction(`${e.key} key blocked`);
             logViolation('blocked_key', `${e.key} key blocked`);
             return;
         }
-        // Blocked combos
-        for (const combo of BLOCKED_COMBOS) {
-            if (e.ctrlKey === combo.ctrl
-                && e.shiftKey === combo.shift
-                && e.key.toUpperCase() === combo.key) {
+
+        // Windows alternative copy/paste shortcuts: Shift+Insert (paste), Ctrl+Insert (copy)
+        if ((e.shiftKey && e.key === 'Insert') || (e.ctrlKey && e.key === 'Insert')) {
+            e.preventDefault();
+            e.stopPropagation();
+            notifyBlockedAction('Copy / Paste is strictly prohibited during the exam');
+            logViolation('blocked_key', 'Insert-based copy/paste blocked');
+            return;
+        }
+
+        // Ctrl / Cmd + key shortcuts
+        if (isCtrlOrMeta) {
+            // Strict Copy / Paste / Cut / Select-All blocking
+            if (['C', 'V', 'X', 'A'].includes(keyUpper)) {
                 e.preventDefault();
-                logViolation('blocked_key', `Ctrl+${combo.shift?'Shift+':''}${combo.key} blocked`);
+                e.stopPropagation();
+                const actionName = (keyUpper === 'C') ? 'Copy' : (keyUpper === 'V') ? 'Paste' : (keyUpper === 'X') ? 'Cut' : 'Select All';
+                notifyBlockedAction(`${actionName} is strictly prohibited during the exam`);
+                logViolation('blocked_key', `Ctrl+${keyUpper} (${actionName}) blocked`);
+                return;
+            }
+
+            // Developer tools, print, save, view-source
+            if (['I', 'J', 'U', 'S', 'P'].includes(keyUpper)) {
+                e.preventDefault();
+                e.stopPropagation();
+                notifyBlockedAction('Shortcut disabled during the exam');
+                logViolation('blocked_key', `Ctrl+${e.shiftKey?'Shift+':''}${keyUpper} blocked`);
                 return;
             }
         }
+    }, true);
+
+    // ── Strictly Block Copy, Cut, and Paste events (Capture Phase) ────────────
+    ['copy', 'cut', 'paste'].forEach(action => {
+        document.addEventListener(action, e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const actionCap = action.charAt(0).toUpperCase() + action.slice(1);
+            notifyBlockedAction(`${actionCap} is strictly disabled. Please type answers manually.`);
+            logViolation('blocked_key', `${actionCap} event blocked`);
+        }, true);
     });
 
-    // ── Block copy / cut (allow paste for descriptive answers) ───────────────
-    document.addEventListener('copy',  e => {
-        // Allow copying inside descriptive textareas (they need to paste their own text)
-        if (e.target && e.target.tagName === 'TEXTAREA') return;
+    // ── Block Drag & Drop into any element ────────────────────────────────────
+    document.addEventListener('dragover', e => {
         e.preventDefault();
-        logViolation('blocked_key', 'copy (Ctrl+C) blocked');
-    });
-    document.addEventListener('cut', e => {
-        if (e.target && e.target.tagName === 'TEXTAREA') return;
+    }, true);
+
+    document.addEventListener('drop', e => {
         e.preventDefault();
-        logViolation('blocked_key', 'cut (Ctrl+X) blocked');
-    });
+        e.stopPropagation();
+        notifyBlockedAction('Dragging and dropping text is disabled');
+        logViolation('blocked_key', 'Drag-and-drop paste attempt blocked');
+    }, true);
 
     </script>
 

@@ -40,7 +40,7 @@ $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500);
 $dup_check = mysqli_prepare($conn,
     "SELECT id FROM exam_violations
      WHERE student_id = ? AND exam_id = ?
-       AND (violation_type = ? OR (violation_type IN ('tab_switch','fullscreen_exit') AND ? IN ('tab_switch','fullscreen_exit')))
+       AND (violation_type = ? OR (violation_type IN ('tab_switch','fullscreen_exit','exit_exam') AND ? IN ('tab_switch','fullscreen_exit','exit_exam')))
        AND occurred_at >= DATE_SUB(NOW(), INTERVAL 3 SECOND)
      LIMIT 1");
 if ($dup_check) {
@@ -52,7 +52,7 @@ if ($dup_check) {
         // Duplicate event within 3 seconds: return existing count without duplicate insert
         $cnt_stmt = mysqli_prepare($conn,
             "SELECT COUNT(*) as cnt FROM exam_violations
-             WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit')");
+             WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
         mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
         mysqli_stmt_execute($cnt_stmt);
         $cnt_res = mysqli_stmt_get_result($cnt_stmt);
@@ -81,7 +81,7 @@ mysqli_stmt_close($stmt);
 // Return current violation count for this student+exam
 $cnt_stmt = mysqli_prepare($conn,
     "SELECT COUNT(*) as cnt FROM exam_violations
-     WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit')");
+     WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
 mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
 mysqli_stmt_execute($cnt_stmt);
 $cnt_res = mysqli_stmt_get_result($cnt_stmt);

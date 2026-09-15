@@ -205,6 +205,17 @@ body {
     padding: 1.75rem !important;
     margin-bottom: 1.5rem !important;
     box-shadow: var(--shadow-sm) !important;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.descriptive-input {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
 }
 
 .option-wrapper {
