@@ -1,16 +1,9 @@
 -- ============================================================
 --  Online Exam System — Complete Database Setup
---  Run this ONE file in phpMyAdmin or MySQL CLI on a fresh DB.
---  This file replaces both the old setup.sql and cloud_setup.sql.
---
---  * Cloud / InfinityFree / cPanel: Select your database in the
---    left sidebar first, then import / run this SQL script.
---  * Local XAMPP: You can uncomment the CREATE DATABASE / USE
---    lines below if you haven't created 'online_exam_db' yet.
 -- ============================================================
 
--- CREATE DATABASE IF NOT EXISTS `online_exam_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
--- USE `online_exam_db`;
+-- Automatically selects your InfinityFree database:
+USE `if0_42825922_exam`;
 
 -- ─────────────────────────────────────────────
 --  TABLE: admin
