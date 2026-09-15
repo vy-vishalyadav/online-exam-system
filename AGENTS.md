@@ -90,8 +90,9 @@ Before finishing any task or reporting completion:
    ```powershell
    C:\xampp\php\php.exe -l <relative_path>
    ```
-2. **Package Archive**: Update the deployment archive using the packaging skill script:
+2. **Package Archive (`zip.zip`)**: Always update `zip.zip` (and `site.zip`) using the packaging skill script. The archive must contain strictly the essential runtime files required for the website to run (`admin/`, `student/`, `includes/`, `config/`, `css/`, `sql/`, `index.php`, `logout.php`, `version.txt`) and exclude development/agent artifacts:
    ```powershell
    powershell -ExecutionPolicy Bypass -File ".agents/skills/package-deploy/scripts/package.ps1"
    ```
 3. **Git Commits**: Use descriptive conventional commit messages (e.g., `fix(navbar): ...`, `feat(exam): ...`).
+

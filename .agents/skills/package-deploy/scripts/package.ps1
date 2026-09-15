@@ -1,4 +1,4 @@
-# Automated Packaging Script for Online Exam System
+# Automated Production Packaging Script for Online Exam System
 # Usage: powershell -ExecutionPolicy Bypass -File .agents/skills/package-deploy/scripts/package.ps1
 
 $ErrorActionPreference = "Stop"
@@ -36,65 +36,60 @@ if ($hasError) {
     Write-Host "[OK] Verified $($phpFiles.Count) PHP files without errors." -ForegroundColor Green
 }
 
-Write-Host "==> Step 2: Creating production deployment archive (site.zip)..." -ForegroundColor Cyan
+Write-Host "==> Step 2: Collecting strictly essential website runtime files..." -ForegroundColor Cyan
 
-$zipPath = Join-Path $repoRoot "site.zip"
-if (Test-Path $zipPath) {
-    Remove-Item $zipPath -Force
-}
+# Runtime folders and files strictly needed for the website to function
+$allowedFolders = @('admin', 'config', 'css', 'includes', 'sql', 'student')
+$allowedRootFiles = @('index.php', 'logout.php', 'version.txt')
 
-$tempDir = Join-Path $repoRoot "temp_package_build"
-if (Test-Path $tempDir) {
-    Remove-Item $tempDir -Recurse -Force
-}
-New-Item -ItemType Directory -Path $tempDir | Out-Null
+$runtimeFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 
-try {
-    # Copy files excluding development / VCS artifacts
-    $excludedPatterns = @(
-        '^\.git',
-        '^\.agents',
-        '^\.gemini',
-        '^\.vscode',
-        '^site\.zip$',
-        '^temp_package_build',
-        '\.log$',
-        '\.tmp$'
-    )
-
-    Get-ChildItem -Path $repoRoot -Recurse | Where-Object {
-        $item = $_
-        $rel = $item.FullName.Substring($repoRoot.Length).TrimStart('\', '/')
-        if ([string]::IsNullOrWhiteSpace($rel)) { return $false }
-        foreach ($pat in $excludedPatterns) {
-            if ($rel -match $pat) { return $false }
-        }
-        return $true
-    } | ForEach-Object {
-        $src = $_.FullName
-        $rel = $src.Substring($repoRoot.Length).TrimStart('\', '/')
-        $dest = Join-Path $tempDir $rel
-        if ($_.PSIsContainer) {
-            if (-not (Test-Path $dest)) {
-                New-Item -ItemType Directory -Path $dest -Force | Out-Null
-            }
-        } else {
-            $destDir = Split-Path $dest
-            if (-not (Test-Path $destDir)) {
-                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-            }
-            Copy-Item -Path $src -Destination $dest -Force
-        }
-    }
-
-    Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
-    $size = (Get-Item $zipPath).Length
-    $sizeKb = [math]::Round($size / 1024, 2)
-    Write-Host "[SUCCESS] Package generated: site.zip ($sizeKb KB)" -ForegroundColor Green
-    Write-Host "Ready for InfinityFree / cPanel upload to htdocs/ or public_html/." -ForegroundColor Yellow
-}
-finally {
-    if (Test-Path $tempDir) {
-        Remove-Item $tempDir -Recurse -Force
+# Collect allowed root files
+foreach ($rootFile in $allowedRootFiles) {
+    $filePath = Join-Path $repoRoot $rootFile
+    if (Test-Path $filePath -PathType Leaf) {
+        $runtimeFiles.Add((Get-Item $filePath))
     }
 }
+
+# Collect files inside allowed folders
+foreach ($folder in $allowedFolders) {
+    $folderPath = Join-Path $repoRoot $folder
+    if (Test-Path $folderPath -PathType Container) {
+        $items = Get-ChildItem -Path $folderPath -Recurse -File | Where-Object {
+            $_.Extension -in @('.php', '.css', '.sql', '.js', '.txt', '.png', '.jpg', '.jpeg', '.svg', '.webp')
+        }
+        foreach ($item in $items) {
+            $runtimeFiles.Add($item)
+        }
+    }
+}
+
+Write-Host "Collected $($runtimeFiles.Count) essential website files." -ForegroundColor Cyan
+
+Add-Type -AssemblyName 'System.IO.Compression.FileSystem'
+
+# Targets: Update zip.zip (primary requested) and site.zip
+$targets = @("zip.zip", "site.zip")
+
+foreach ($target in $targets) {
+    $targetPath = Join-Path $repoRoot $target
+    if (Test-Path $targetPath) {
+        Remove-Item $targetPath -Force
+    }
+
+    $zip = [System.IO.Compression.ZipFile]::Open($targetPath, 'Create')
+    foreach ($file in $runtimeFiles) {
+        $rel = $file.FullName.Substring($repoRoot.Length).TrimStart('\', '/')
+        # Normalize entry paths with forward slashes for Linux/cPanel compatibility
+        $entryName = $rel.Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $entryName) | Out-Null
+    }
+    $zip.Dispose()
+
+    $item = Get-Item $targetPath
+    $sizeKb = [math]::Round($item.Length / 1024, 2)
+    Write-Host "[SUCCESS] Package generated: $target ($sizeKb KB, $($runtimeFiles.Count) files)" -ForegroundColor Green
+}
+
+Write-Host "Ready for upload to InfinityFree / cPanel (htdocs/ or public_html/)." -ForegroundColor Yellow
