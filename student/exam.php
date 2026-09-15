@@ -1057,23 +1057,42 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         'PrintScreen',                   // Screenshot
     ]);
 
-    // Toast notification for blocked actions (subtle in-page banner)
+    // Toast notification for blocked actions (guaranteed visible in fullscreen)
     let blockToastTimer = null;
     function notifyBlockedAction(msg) {
+        const container = document.fullscreenElement || document.body;
         let toastEl = document.getElementById('blockedActionToast');
         if (!toastEl) {
             toastEl = document.createElement('div');
             toastEl.id = 'blockedActionToast';
-            toastEl.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(220,53,69,0.95);color:#fff;padding:10px 22px;border-radius:50px;font-size:14px;font-weight:600;z-index:999999;box-shadow:0 4px 15px rgba(0,0,0,0.3);pointer-events:none;transition:opacity 0.3s ease;';
-            document.body.appendChild(toastEl);
+            toastEl.style.cssText = 'position:fixed;bottom:35px;left:50%;transform:translateX(-50%);background:#dc2626;color:#ffffff;padding:12px 28px;border-radius:50px;font-size:15px;font-weight:700;z-index:2147483647;box-shadow:0 8px 30px rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.4);pointer-events:none;transition:all 0.3s ease;display:flex;align-items:center;gap:10px;';
+            container.appendChild(toastEl);
+        } else if (toastEl.parentElement !== container) {
+            container.appendChild(toastEl);
         }
-        toastEl.innerHTML = `<i class="bi bi-shield-x me-2"></i> ${msg}`;
+        toastEl.innerHTML = `<i class="bi bi-shield-x" style="font-size:1.25rem;"></i> <span>${msg}</span>`;
         toastEl.style.opacity = '1';
+        toastEl.style.transform = 'translateX(-50%) translateY(0)';
         clearTimeout(blockToastTimer);
         blockToastTimer = setTimeout(() => {
-            if (toastEl) toastEl.style.opacity = '0';
-        }, 2200);
+            if (toastEl) {
+                toastEl.style.opacity = '0';
+                toastEl.style.transform = 'translateX(-50%) translateY(15px)';
+            }
+        }, 2800);
     }
+
+    // ── Input Level 2 (beforeinput): Catch Win+V, Mobile Keyboard Clips, IME Pastes ──
+    document.addEventListener('beforeinput', e => {
+        const inputType = e.inputType || '';
+        // Intercept any paste or drop at the DOM input pipeline before value changes
+        if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop' || inputType === 'insertFromPasteAsQuotation') {
+            e.preventDefault();
+            e.stopPropagation();
+            notifyBlockedAction('Pasting from clipboard is strictly prohibited. Please type manually.');
+            logViolation('blocked_key', `Clipboard insertion (${inputType}) blocked`);
+        }
+    }, true);
 
     document.addEventListener('keydown', e => {
         const isCtrlOrMeta = e.ctrlKey || e.metaKey;
