@@ -67,6 +67,11 @@ if (isset($_SESSION['admin_id'])) {
 $error = "";
 $success_msg = "";
 
+// CSRF token generation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 if (isset($_GET['msg'])) {
     if ($_GET['msg'] === 'logged_out') {
         $success_msg = "You have been logged out successfully.";
@@ -103,76 +108,108 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
     // Clear any URL-based status message — it's a new login attempt, not a redirect notification
     $success_msg = "";
     $error = "";
-    $role = $_POST['role'] ?? '';
 
-    if ($role === 'student') {
-        $email    = trim($_POST['email']    ?? '');
-        $password = trim($_POST['password'] ?? '');
+    // CSRF verification
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid or expired session. Please refresh the page and try again.";
+    } else {
+        $role = $_POST['role'] ?? '';
 
-        if (empty($email) || empty($password)) {
-            $error = "Please enter both Student ID and Password.";
-        } else {
-            $stmt = mysqli_prepare($conn, "SELECT id, name, email, password FROM students WHERE email = ? LIMIT 1");
-            if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "s", $email);
-                mysqli_stmt_execute($stmt);
-                $result = mysqli_stmt_get_result($stmt);
+        if ($role === 'student') {
+            $email    = trim($_POST['email']    ?? '');
+            $password = trim($_POST['password'] ?? '');
 
-                if ($result && $row = mysqli_fetch_assoc($result)) {
-                    if (password_verify($password, $row['password']) || $password === $row['password']) {
-                        // SUCCESS — reset lockout counter
-                        unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
-                        session_regenerate_id(true);
-                        $_SESSION['student_id']    = (int)$row['id'];
-                        $_SESSION['student_name']  = $row['name'];
-                        $_SESSION['student_email'] = $row['email'];
-                        $_SESSION['last_activity'] = time();
-                        header("Location: student/dashboard.php");
-                        exit;
+            if (empty($email) || empty($password)) {
+                $error = "Please enter both Student ID and Password.";
+            } else {
+                $stmt = mysqli_prepare($conn, "SELECT id, name, email, password FROM students WHERE email = ? LIMIT 1");
+                if ($stmt) {
+                    mysqli_stmt_bind_param($stmt, "s", $email);
+                    mysqli_stmt_execute($stmt);
+                    $result = mysqli_stmt_get_result($stmt);
+
+                    if ($result && $row = mysqli_fetch_assoc($result)) {
+                        $is_valid_pass = password_verify($password, $row['password']);
+                        $is_plaintext  = ($password === $row['password']);
+
+                        if ($is_valid_pass || $is_plaintext) {
+                            if (!$is_valid_pass && $is_plaintext) {
+                                // Transparently upgrade plaintext password to bcrypt hash
+                                $new_hash = password_hash($password, PASSWORD_DEFAULT);
+                                $up_stmt = mysqli_prepare($conn, "UPDATE students SET password = ? WHERE id = ?");
+                                if ($up_stmt) {
+                                    mysqli_stmt_bind_param($up_stmt, "si", $new_hash, $row['id']);
+                                    mysqli_stmt_execute($up_stmt);
+                                    mysqli_stmt_close($up_stmt);
+                                }
+                            }
+                            // SUCCESS — reset lockout counter
+                            unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
+                            session_regenerate_id(true);
+                            $_SESSION['student_id']    = (int)$row['id'];
+                            $_SESSION['student_name']  = $row['name'];
+                            $_SESSION['student_email'] = $row['email'];
+                            $_SESSION['last_activity'] = time();
+                            header("Location: student/dashboard.php");
+                            exit;
+                        } else {
+                            $error = "Invalid Student ID or password.";
+                        }
                     } else {
                         $error = "Invalid Student ID or password.";
                     }
+                    mysqli_stmt_close($stmt);
                 } else {
-                    $error = "Invalid Student ID or password.";
+                    $error = "Database query error. Please try again.";
                 }
-                mysqli_stmt_close($stmt);
-            } else {
-                $error = "Database query error. Please try again.";
             }
-        }
-    } elseif ($role === 'admin') {
-        $username = trim($_POST['username'] ?? '');
-        $password = trim($_POST['password'] ?? '');
+        } elseif ($role === 'admin') {
+            $username = trim($_POST['username'] ?? '');
+            $password = trim($_POST['password'] ?? '');
 
-        if (empty($username) || empty($password)) {
-            $error = "Please enter both Username and Password.";
-        } else {
-            $stmt = mysqli_prepare($conn, "SELECT id, username, password FROM admin WHERE username = ? LIMIT 1");
-            if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "s", $username);
-                mysqli_stmt_execute($stmt);
-                $result = mysqli_stmt_get_result($stmt);
+            if (empty($username) || empty($password)) {
+                $error = "Please enter both Username and Password.";
+            } else {
+                $stmt = mysqli_prepare($conn, "SELECT id, username, password FROM admin WHERE username = ? LIMIT 1");
+                if ($stmt) {
+                    mysqli_stmt_bind_param($stmt, "s", $username);
+                    mysqli_stmt_execute($stmt);
+                    $result = mysqli_stmt_get_result($stmt);
 
-                if ($result && $row = mysqli_fetch_assoc($result)) {
-                    if (password_verify($password, $row['password']) || $password === $row['password']) {
-                        // SUCCESS — reset lockout counter
-                        unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
-                        session_regenerate_id(true);
-                        $_SESSION['admin_id']       = (int)$row['id'];
-                        $_SESSION['admin_username'] = $row['username'];
-                        $_SESSION['is_super_admin'] = ((int)$row['id'] === 1 || strtolower($row['username']) === 'admin');
-                        $_SESSION['last_activity']  = time();
-                        header("Location: admin/dashboard.php");
-                        exit;
+                    if ($result && $row = mysqli_fetch_assoc($result)) {
+                        $is_valid_pass = password_verify($password, $row['password']);
+                        $is_plaintext  = ($password === $row['password']);
+
+                        if ($is_valid_pass || $is_plaintext) {
+                            if (!$is_valid_pass && $is_plaintext) {
+                                // Transparently upgrade plaintext password to bcrypt hash
+                                $new_hash = password_hash($password, PASSWORD_DEFAULT);
+                                $up_stmt = mysqli_prepare($conn, "UPDATE admin SET password = ? WHERE id = ?");
+                                if ($up_stmt) {
+                                    mysqli_stmt_bind_param($up_stmt, "si", $new_hash, $row['id']);
+                                    mysqli_stmt_execute($up_stmt);
+                                    mysqli_stmt_close($up_stmt);
+                                }
+                            }
+                            // SUCCESS — reset lockout counter
+                            unset($_SESSION[$lockout_key], $_SESSION[$lockout_ts_key]);
+                            session_regenerate_id(true);
+                            $_SESSION['admin_id']       = (int)$row['id'];
+                            $_SESSION['admin_username'] = $row['username'];
+                            $_SESSION['is_super_admin'] = ((int)$row['id'] === 1 || strtolower($row['username']) === 'admin');
+                            $_SESSION['last_activity']  = time();
+                            header("Location: admin/dashboard.php");
+                            exit;
+                        } else {
+                            $error = "Invalid admin username or password.";
+                        }
                     } else {
                         $error = "Invalid admin username or password.";
                     }
+                    mysqli_stmt_close($stmt);
                 } else {
-                    $error = "Invalid admin username or password.";
+                    $error = "Database query error. Please try again.";
                 }
-                mysqli_stmt_close($stmt);
-            } else {
-                $error = "Database query error. Please try again.";
             }
         }
     }
@@ -265,6 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                 <!-- Student Login Form -->
                 <div class="tab-pane fade show active" id="student-pane" role="tabpanel">
                     <form method="POST" action="">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                         <input type="hidden" name="role" value="student">
                         <div class="mb-3">
                             <label class="form-label fw-semibold text-secondary">Student ID</label>
@@ -292,6 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                 <!-- Admin Login Form -->
                 <div class="tab-pane fade" id="admin-pane" role="tabpanel">
                     <form method="POST" action="">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                         <input type="hidden" name="role" value="admin">
                         <div class="mb-3">
                             <label class="form-label fw-semibold text-secondary">Username</label>

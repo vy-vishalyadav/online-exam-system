@@ -186,18 +186,28 @@ if ($remaining_sec <= 0) {
 
 // ── Check existing violations for this student + exam ─────────────────────────
 if ($is_fresh_session) {
-    @mysqli_query($conn, "DELETE FROM exam_violations WHERE student_id=$student_id AND exam_id=$exam_id");
+    $del_v = mysqli_prepare($conn, "DELETE FROM exam_violations WHERE student_id=? AND exam_id=?");
+    if ($del_v) {
+        mysqli_stmt_bind_param($del_v, "ii", $student_id, $exam_id);
+        mysqli_stmt_execute($del_v);
+        mysqli_stmt_close($del_v);
+    }
     $initial_violations = 0;
 } else {
     // Deduplicate any rapid double-logged records for this session (e.g. from network retries or parallel sendBeacon/fetch)
-    @mysqli_query($conn,
+    $dedup_v = mysqli_prepare($conn,
         "DELETE v1 FROM exam_violations v1
          INNER JOIN exam_violations v2
          WHERE v1.id > v2.id
-           AND v1.student_id = $student_id
-           AND v1.exam_id = $exam_id
+           AND v1.student_id = ?
+           AND v1.exam_id = ?
            AND v1.violation_type = v2.violation_type
            AND TIMESTAMPDIFF(SECOND, v2.occurred_at, v1.occurred_at) <= 3");
+    if ($dedup_v) {
+        mysqli_stmt_bind_param($dedup_v, "ii", $student_id, $exam_id);
+        mysqli_stmt_execute($dedup_v);
+        mysqli_stmt_close($dedup_v);
+    }
 
     $v_stmt = mysqli_prepare($conn,
         "SELECT COUNT(*) AS v_count FROM exam_violations 
@@ -216,13 +226,18 @@ if ($is_fresh_session) {
 
 
 // ── Fetch questions ──────────────────────────────────────────────────────────
-$questions_res = mysqli_query($conn,
-    "SELECT * FROM questions WHERE exam_id = " . (int)$exam_id . " ORDER BY id ASC");
+$q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
 $questions = [];
-if ($questions_res) {
-    while ($q = mysqli_fetch_assoc($questions_res)) {
-        $questions[] = $q;
+if ($q_stmt) {
+    mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
+    mysqli_stmt_execute($q_stmt);
+    $questions_res = mysqli_stmt_get_result($q_stmt);
+    if ($questions_res) {
+        while ($q = mysqli_fetch_assoc($questions_res)) {
+            $questions[] = $q;
+        }
     }
+    mysqli_stmt_close($q_stmt);
 }
 $total_questions = count($questions);
 
@@ -1155,6 +1170,10 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         if (isCtrlOrMeta) {
             // Strict Copy / Paste / Cut / Select-All blocking
             if (['C', 'V', 'X', 'A'].includes(keyUpper)) {
+                // Permit Ctrl+A strictly within editable textareas/inputs so students can edit typed text
+                if (keyUpper === 'A' && (e.target.tagName === 'TEXTAREA' || (e.target.tagName === 'INPUT' && e.target.type === 'text'))) {
+                    return;
+                }
                 e.preventDefault();
                 e.stopPropagation();
                 const actionName = (keyUpper === 'C') ? 'Copy' : (keyUpper === 'V') ? 'Paste' : (keyUpper === 'X') ? 'Cut' : 'Select All';

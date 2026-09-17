@@ -18,24 +18,43 @@ mysqli_stmt_close($scr);
 $student_class_id   = (int)($scrow['class_id'] ?? 0);
 $student_class_name = $scrow['class_name'] ?? null;
 
-// Fetch exams visible to this student:
+// Fetch exams visible to this student using prepared statement:
 // - Exams with NO class assignment (visible to everyone), OR
 // - Exams assigned to this student's class
-$query = "SELECT e.*,
-            (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
-            (SELECT COALESCE(SUM(marks), COUNT(*)) FROM questions q WHERE q.exam_id = e.id) AS total_marks,
-            (SELECT score  FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
-            (SELECT status FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
-            (SELECT COUNT(*) FROM results r WHERE r.student_id = $student_id AND r.exam_id = e.id) AS attempt_count,
-            (SELECT es.submitted FROM exam_sessions es WHERE es.student_id = $student_id AND es.exam_id = e.id LIMIT 1) AS session_submitted,
-            (SELECT es.started_at FROM exam_sessions es WHERE es.student_id = $student_id AND es.exam_id = e.id LIMIT 1) AS session_started_at
-          FROM exams e
-          WHERE (
-              NOT EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id)
-              " . ($student_class_id ? "OR EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id AND eca.class_id = $student_class_id)" : "") . "
-          )
-          ORDER BY e.id DESC";
-$exams = mysqli_query($conn, $query);
+if ($student_class_id > 0) {
+    $sql = "SELECT e.*,
+                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
+                (SELECT COALESCE(SUM(marks), COUNT(*)) FROM questions q WHERE q.exam_id = e.id) AS total_marks,
+                (SELECT score  FROM results r WHERE r.student_id = ? AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
+                (SELECT status FROM results r WHERE r.student_id = ? AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
+                (SELECT COUNT(*) FROM results r WHERE r.student_id = ? AND r.exam_id = e.id) AS attempt_count,
+                (SELECT es.submitted FROM exam_sessions es WHERE es.student_id = ? AND es.exam_id = e.id LIMIT 1) AS session_submitted,
+                (SELECT es.started_at FROM exam_sessions es WHERE es.student_id = ? AND es.exam_id = e.id LIMIT 1) AS session_started_at
+            FROM exams e
+            WHERE (
+                NOT EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id)
+                OR EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id AND eca.class_id = ?)
+            )
+            ORDER BY e.id DESC";
+    $stmt = mysqli_prepare($conn, $sql);
+    mysqli_stmt_bind_param($stmt, "iiiiii", $student_id, $student_id, $student_id, $student_id, $student_id, $student_class_id);
+} else {
+    $sql = "SELECT e.*,
+                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count,
+                (SELECT COALESCE(SUM(marks), COUNT(*)) FROM questions q WHERE q.exam_id = e.id) AS total_marks,
+                (SELECT score  FROM results r WHERE r.student_id = ? AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_score,
+                (SELECT status FROM results r WHERE r.student_id = ? AND r.exam_id = e.id ORDER BY r.attempted_at DESC LIMIT 1) AS last_status,
+                (SELECT COUNT(*) FROM results r WHERE r.student_id = ? AND r.exam_id = e.id) AS attempt_count,
+                (SELECT es.submitted FROM exam_sessions es WHERE es.student_id = ? AND es.exam_id = e.id LIMIT 1) AS session_submitted,
+                (SELECT es.started_at FROM exam_sessions es WHERE es.student_id = ? AND es.exam_id = e.id LIMIT 1) AS session_started_at
+            FROM exams e
+            WHERE NOT EXISTS (SELECT 1 FROM exam_class_assignments eca WHERE eca.exam_id = e.id)
+            ORDER BY e.id DESC";
+    $stmt = mysqli_prepare($conn, $sql);
+    mysqli_stmt_bind_param($stmt, "iiiii", $student_id, $student_id, $student_id, $student_id, $student_id);
+}
+mysqli_stmt_execute($stmt);
+$exams = mysqli_stmt_get_result($stmt);
 ?>
 
 <div class="mb-4">
@@ -197,8 +216,12 @@ $exams = mysqli_query($conn, $query);
                             <?php else: ?>
                                 <!-- Not started: Start Exam -->
                                 <button type="button"
-                                        class="btn btn-primary w-100 fw-bold shadow-sm py-2"
-                                        onclick="confirmStartExam(<?php echo $exam['id']; ?>, '<?php echo htmlspecialchars(addslashes($exam['title'])); ?>', <?php echo (int)$exam['duration_minutes']; ?>, <?php echo $q_count; ?>, '<?php echo $total_marks_disp; ?>')">
+                                        class="btn btn-primary w-100 fw-bold shadow-sm py-2 btn-start-exam"
+                                        data-exam-id="<?php echo (int)$exam['id']; ?>"
+                                        data-title="<?php echo htmlspecialchars($exam['title'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-duration="<?php echo (int)$exam['duration_minutes']; ?>"
+                                        data-qcount="<?php echo $q_count; ?>"
+                                        data-total-marks="<?php echo htmlspecialchars((string)$total_marks_disp, ENT_QUOTES, 'UTF-8'); ?>">
                                     <i class="bi bi-play-fill me-1"></i> Start Exam
                                 </button>
                             <?php endif; ?>
@@ -279,6 +302,15 @@ function confirmStartExam(examId, title, duration, qCount, totalMarks) {
     document.getElementById('modalBeginBtn').href = 'exam.php?id=' + examId;
     new bootstrap.Modal(document.getElementById('startExamModal')).show();
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.btn-start-exam').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var d = this.dataset;
+            confirmStartExam(d.examId, d.title, d.duration, d.qcount, d.totalMarks);
+        });
+    });
+});
 
 function filterExams(status, btn) {
     // Update active button

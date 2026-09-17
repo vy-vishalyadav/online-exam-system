@@ -119,6 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         if ($delete_id <= 0) {
             $error = "Invalid admin account selected.";
+        } elseif ($delete_id === 1) {
+            $error = "The primary root Super Administrator account (ID: 1) is permanent and cannot be deleted.";
         } elseif ($delete_id === (int)$_SESSION['admin_id']) {
             $error = "You cannot delete your own active administrator account!";
         } else {
@@ -278,67 +280,6 @@ $total_admin_count = count($all_admins);
                                         </button>
                                     <?php endif; ?>
                                 </div>
-
-                                <!-- Change Password Modal -->
-                                <div class="modal fade text-start" id="changePasswordModal<?php echo $adm['id']; ?>" tabindex="-1">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <form method="POST" action="manage-admins.php">
-                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                                                <input type="hidden" name="action" value="change_password">
-                                                <input type="hidden" name="admin_id" value="<?php echo $adm['id']; ?>">
-                                                <div class="modal-header bg-light">
-                                                    <h5 class="modal-title fw-bold"><i class="bi bi-key-fill text-primary me-2"></i>Change Password — <?php echo htmlspecialchars($adm['username']); ?></h5>
-                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <div class="modal-body p-4">
-                                                    <div class="mb-3">
-                                                        <label class="form-label fw-semibold">New Password <span class="text-danger">*</span></label>
-                                                        <input type="password" name="new_password" class="form-control" placeholder="Minimum 6 characters" required minlength="6">
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Confirm New Password <span class="text-danger">*</span></label>
-                                                        <input type="password" name="confirm_password" class="form-control" placeholder="Repeat new password" required minlength="6">
-                                                    </div>
-                                                </div>
-                                                <div class="modal-footer bg-light">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-primary fw-semibold">Update Password</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Delete Confirmation Modal -->
-                                <?php if (!$is_current_user && $total_admin_count > 1): ?>
-                                <div class="modal fade text-start" id="deleteAdminModal<?php echo $adm['id']; ?>" tabindex="-1">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <form method="POST" action="manage-admins.php">
-                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                                                <input type="hidden" name="action" value="delete_admin">
-                                                <input type="hidden" name="admin_id" value="<?php echo $adm['id']; ?>">
-                                                <div class="modal-header bg-danger text-white">
-                                                    <h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Removal</h5>
-                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <div class="modal-body p-4">
-                                                    <p class="mb-0">Are you sure you want to permanently delete administrator account <strong><?php echo htmlspecialchars($adm['username']); ?></strong>?</p>
-                                                    <div class="alert alert-warning mt-3 mb-0 small">
-                                                        <i class="bi bi-info-circle me-1"></i> This action cannot be undone.
-                                                    </div>
-                                                </div>
-                                                <div class="modal-footer bg-light">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-danger fw-semibold">Yes, Delete Account</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-                                <?php endif; ?>
-
                             </td>
                         </tr>
                     <?php
@@ -356,6 +297,77 @@ $total_admin_count = count($all_admins);
         </div>
     </div>
 </div>
+
+<!-- Modals for Administrators (Placed outside table to prevent backdrop stacking trap) -->
+<?php if (!empty($all_admins)): ?>
+    <?php foreach ($all_admins as $adm): 
+        $is_current_user = ((int)$adm['id'] === (int)$_SESSION['admin_id']);
+    ?>
+        <!-- Change Password Modal -->
+        <div class="modal fade text-start" id="changePasswordModal<?php echo $adm['id']; ?>" tabindex="-1" aria-labelledby="changePasswordModalLabel<?php echo $adm['id']; ?>" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                    <form method="POST" action="manage-admins.php">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                        <input type="hidden" name="action" value="change_password">
+                        <input type="hidden" name="admin_id" value="<?php echo $adm['id']; ?>">
+                        <div class="modal-header bg-light">
+                            <h5 class="modal-title fw-bold text-dark" id="changePasswordModalLabel<?php echo $adm['id']; ?>">
+                                <i class="bi bi-key-fill text-primary me-2"></i>Change Password — <?php echo htmlspecialchars($adm['username']); ?>
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">New Password <span class="text-danger">*</span></label>
+                                <input type="password" name="new_password" class="form-control" placeholder="Minimum 6 characters" required minlength="6">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Confirm New Password <span class="text-danger">*</span></label>
+                                <input type="password" name="confirm_password" class="form-control" placeholder="Repeat new password" required minlength="6">
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-light">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary fw-semibold">Update Password</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <?php if (!$is_current_user && $total_admin_count > 1): ?>
+        <div class="modal fade text-start" id="deleteAdminModal<?php echo $adm['id']; ?>" tabindex="-1" aria-labelledby="deleteAdminModalLabel<?php echo $adm['id']; ?>" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                    <form method="POST" action="manage-admins.php">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                        <input type="hidden" name="action" value="delete_admin">
+                        <input type="hidden" name="admin_id" value="<?php echo $adm['id']; ?>">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title fw-bold" id="deleteAdminModalLabel<?php echo $adm['id']; ?>">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Removal
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <p class="mb-0">Are you sure you want to permanently delete administrator account <strong><?php echo htmlspecialchars($adm['username']); ?></strong>?</p>
+                            <div class="alert alert-warning mt-3 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i> This action cannot be undone.
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-light">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-danger fw-semibold">Yes, Delete Account</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+    <?php endforeach; ?>
+<?php endif; ?>
 
 <!-- Add Admin Modal -->
 <div class="modal fade" id="addAdminModal" tabindex="-1">

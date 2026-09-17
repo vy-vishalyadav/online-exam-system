@@ -66,12 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
                 }
                 $domain = $clean_class . '.com';
 
-                // Find highest existing 5-digit ID for this class domain
-                $esc_domain = mysqli_real_escape_string($conn, $domain);
-                $res = mysqli_query($conn,
+                // Find highest existing 5-digit ID for this class domain using prepared statement
+                $domain_pattern = "%@" . $domain;
+                $stmt_max = mysqli_prepare($conn,
                     "SELECT MAX(CAST(SUBSTRING_INDEX(email, '@', 1) AS UNSIGNED)) AS max_num
-                     FROM students WHERE email LIKE '%@" . $esc_domain . "' AND email REGEXP '^[0-9]+@'");
-                $row      = $res ? mysqli_fetch_assoc($res) : null;
+                     FROM students WHERE email LIKE ? AND email REGEXP '^[0-9]+@'");
+                $row = null;
+                if ($stmt_max) {
+                    mysqli_stmt_bind_param($stmt_max, "s", $domain_pattern);
+                    mysqli_stmt_execute($stmt_max);
+                    $res = mysqli_stmt_get_result($stmt_max);
+                    $row = $res ? mysqli_fetch_assoc($res) : null;
+                    mysqli_stmt_close($stmt_max);
+                }
                 $next_num = max(10001, (int)($row['max_num'] ?? 10000) + 1);
                 $login_id = $next_num . "@" . $domain;
 
@@ -247,9 +254,13 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
 </div>
 
 <div class="card shadow-sm border-0 rounded-4">
+    <!-- Top Horizontal Scrollbar Slider -->
+    <div class="table-scroll-top-container d-none" id="studentsTableScrollTop">
+        <div class="table-scroll-top-inner" id="studentsTableScrollTopInner"></div>
+    </div>
     <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table custom-table align-middle mb-0" id="studentsTable">
+        <div class="table-responsive" id="studentsTableResponsive">
+            <table class="table custom-table table-sticky-actions align-middle mb-0" id="studentsTable">
                 <thead>
                     <tr>
                         <th class="ps-4">#</th>
@@ -315,48 +326,6 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                                     <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete"><i class="bi bi-trash"></i></button>
                                 </form>
                             </div>
-
-                            <!-- Edit Student Modal -->
-                            <div class="modal fade text-start" id="editStudentModal<?php echo $s['id']; ?>" tabindex="-1">
-                                <div class="modal-dialog"><div class="modal-content">
-                                    <form method="POST">
-                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                                        <input type="hidden" name="edit_student" value="1">
-                                        <input type="hidden" name="student_id" value="<?php echo $s['id']; ?>">
-                                        <div class="modal-header bg-light"><h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Student</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-                                        <div class="modal-body p-4">
-                                            <div class="mb-3">
-                                                <label class="form-label fw-semibold">Full Name</label>
-                                                <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($s['name']); ?>" required maxlength="150">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label fw-semibold">Class <span class="text-danger">*</span></label>
-                                                <select name="class_id" class="form-select" required>
-                                                    <option value="" disabled>-- Select a Class --</option>
-                                                    <?php foreach ($classes as $c): ?>
-                                                    <option value="<?php echo $c['id']; ?>" <?php echo ($s['class_id'] == $c['id']) ? 'selected' : ''; ?>>
-                                                        <?php echo htmlspecialchars($c['name']); ?> — <?php echo htmlspecialchars($c['description'] ?? ''); ?>
-                                                    </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <div class="form-text"><i class="bi bi-info-circle me-1 text-primary"></i>Changing class does NOT change the student's permanent ID.</div>
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label fw-semibold">Student ID <span class="text-muted fw-normal">(permanent)</span></label>
-                                                <input type="text" name="email" class="form-control font-monospace" value="<?php echo htmlspecialchars($s['email']); ?>" required maxlength="100">
-                                                <div class="form-text text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Rarely needs changing. Student uses this to log in.</div>
-                                            </div>
-                                            <div class="alert alert-info border-0 bg-info-subtle mb-0 py-2 px-3 small">
-                                                <i class="bi bi-key me-1"></i> To reset password, use the <strong>Reset PW</strong> button in the table.
-                                            </div>
-                                        </div>
-                                        <div class="modal-footer bg-light">
-                                            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                            <button class="btn btn-primary">Update Student</button>
-                                        </div>
-                                    </form>
-                                </div></div>
-                            </div>
                         </td>
                     </tr>
                     <?php endforeach; endif; ?>
@@ -378,13 +347,62 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
     </div>
 </div>
 
+<!-- Edit Student Modals (Placed outside table to prevent backdrop stacking trap) -->
+<?php if (!empty($students)): foreach ($students as $s): ?>
+<div class="modal fade text-start" id="editStudentModal<?php echo $s['id']; ?>" tabindex="-1" aria-labelledby="editStudentModalLabel<?php echo $s['id']; ?>" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                <input type="hidden" name="edit_student" value="1">
+                <input type="hidden" name="student_id" value="<?php echo $s['id']; ?>">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title fw-bold text-dark" id="editStudentModalLabel<?php echo $s['id']; ?>"><i class="bi bi-pencil-square me-2 text-primary"></i>Edit Student</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Full Name <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($s['name']); ?>" required maxlength="150">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Class <span class="text-danger">*</span></label>
+                        <select name="class_id" class="form-select" required>
+                            <option value="" disabled>-- Select a Class --</option>
+                            <?php foreach ($classes as $c): ?>
+                            <option value="<?php echo $c['id']; ?>" <?php echo ($s['class_id'] == $c['id']) ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($c['name']); ?> — <?php echo htmlspecialchars($c['description'] ?? ''); ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text"><i class="bi bi-info-circle me-1 text-primary"></i>Changing class does NOT change the student's permanent ID.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Student ID <span class="text-muted fw-normal">(permanent)</span></label>
+                        <input type="text" name="email" class="form-control font-monospace" value="<?php echo htmlspecialchars($s['email']); ?>" required maxlength="100">
+                        <div class="form-text text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Rarely needs changing. Student uses this to log in.</div>
+                    </div>
+                    <div class="alert alert-info border-0 bg-info-subtle mb-0 py-2 px-3 small">
+                        <i class="bi bi-key me-1"></i> To reset password, use the <strong>Reset PW</strong> button in the table.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold">Update Student</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endforeach; endif; ?>
+
 <!-- Add Student Modal -->
 <div class="modal fade" id="addStudentModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
         <form method="POST">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <input type="hidden" name="add_student" value="1">
-            <div class="modal-header bg-primary text-white"><h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Add New Student</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header bg-primary text-white"><h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Add New Student</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body p-4">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Student Full Name <span class="text-danger">*</span></label>
@@ -420,8 +438,8 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                 </div>
             </div>
             <div class="modal-footer bg-light">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button class="btn btn-primary fw-bold"><i class="bi bi-plus-circle me-1"></i> Add Student</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary fw-bold"><i class="bi bi-plus-circle me-1"></i> Add Student</button>
             </div>
         </form>
     </div></div>
@@ -485,6 +503,10 @@ function applyFilters() {
     if (clearBtn) {
         clearBtn.style.display = term.length > 0 ? '' : 'none';
     }
+
+    if (typeof updateStudentsScrollWidth === 'function') {
+        updateStudentsScrollWidth();
+    }
 }
 
 function filterClass(classId) {
@@ -533,7 +555,48 @@ function resetAllFilters() {
     filterClass(0);
 }
 
+// Synchronize Top Horizontal Scrollbar with Students Table
+let updateStudentsScrollWidth = function() {};
 document.addEventListener('DOMContentLoaded', () => {
+    const topScroll = document.getElementById('studentsTableScrollTop');
+    const tableCont = document.getElementById('studentsTableResponsive');
+    if (topScroll && tableCont) {
+        const topInner = document.getElementById('studentsTableScrollTopInner');
+        const table = tableCont.querySelector('table');
+
+        updateStudentsScrollWidth = function() {
+            if (!table) return;
+            const scrollW = table.scrollWidth;
+            const clientW = tableCont.clientWidth;
+            if (scrollW > clientW + 5) {
+                topScroll.classList.remove('d-none');
+                if (topInner) topInner.style.width = scrollW + 'px';
+            } else {
+                topScroll.classList.add('d-none');
+            }
+        };
+
+        let isSyncing = false;
+        topScroll.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                tableCont.scrollLeft = topScroll.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+        tableCont.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                topScroll.scrollLeft = tableCont.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+
+        window.addEventListener('resize', updateStudentsScrollWidth);
+        updateStudentsScrollWidth();
+        setTimeout(updateStudentsScrollWidth, 300);
+    }
+
     // Initialize filters based on initial state
     if (currentClassFilter !== 0 || currentSearchTerm !== '') {
         filterClass(currentClassFilter);

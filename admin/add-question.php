@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (strlen($option_a) > 500 || strlen($option_b) > 500 || strlen($option_c) > 500 || strlen($option_d) > 500) {
                     $error = "Option text is too long (max 500 characters each).";
                 } else {
-                    $mcq_marks = 1;
+                    $mcq_marks = max(0.5, (float)($_POST['mcq_marks'] ?? 1));
                     $stmt = mysqli_prepare($conn, "INSERT INTO questions (exam_id, question_text, question_type, marks, option_a, option_b, option_c, option_d, correct_option) VALUES (?, ?, 'mcq', ?, ?, ?, ?, ?, ?)");
                     if ($stmt) {
                         mysqli_stmt_bind_param($stmt, "isdsssss", $exam_id, $question_text, $mcq_marks, $option_a, $option_b, $option_c, $option_d, $correct_option);
@@ -208,6 +208,22 @@ $exams = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
                         <option value="C">Option C</option>
                         <option value="D">Option D</option>
                     </select>
+                </div>
+
+                <div class="mb-4">
+                    <label for="mcq_marks" class="form-label fw-semibold">
+                        <i class="bi bi-award text-primary me-1"></i> Marks for this Question
+                    </label>
+                    <input type="number"
+                           name="mcq_marks"
+                           id="mcq_marks"
+                           class="form-control"
+                           min="0.5"
+                           max="100"
+                           step="0.5"
+                           value="1"
+                           style="max-width: 160px;">
+                    <div class="form-text">Default is 1. You can set any value (e.g. 1, 2, 5).</div>
                 </div>
             </div>
 

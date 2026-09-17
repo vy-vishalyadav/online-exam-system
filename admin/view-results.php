@@ -165,15 +165,15 @@ if ($student_filter > 0) {
 }
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
-$sql = "SELECT r.*, s.name AS student_name, s.email, c.name AS class_name,
-         e.title AS exam_title,
+$sql = "SELECT r.*, COALESCE(s.name, 'Deleted Student') AS student_name, COALESCE(s.email, '—') AS email, c.name AS class_name,
+         COALESCE(e.title, 'Deleted Exam') AS exam_title,
          (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS total_q,
          (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_q_count,
          (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
          FROM results r
-         JOIN students s ON r.student_id = s.id
+         LEFT JOIN students s ON r.student_id = s.id
          LEFT JOIN classes c ON s.class_id = c.id
-         JOIN exams e ON r.exam_id = e.id
+         LEFT JOIN exams e ON r.exam_id = e.id
          $where_sql
          ORDER BY r.attempted_at DESC";
 
@@ -200,9 +200,13 @@ if ($stmt_results) {
 $answers_by_result = [];
 if (!empty($result_ids)) {
     $ids_str  = implode(',', array_map('intval', $result_ids));
-    $sa_query = mysqli_query($conn, "SELECT sa.*, q.question_text, q.question_type, q.marks AS question_marks, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option 
+    $sa_query = mysqli_query($conn, "SELECT sa.*, 
+                                      COALESCE(q.question_text, CONCAT('Question #', sa.question_id)) AS question_text, 
+                                      COALESCE(q.question_type, 'mcq') AS question_type, 
+                                      q.marks AS question_marks, 
+                                      q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option 
                                       FROM student_answers sa
-                                      JOIN questions q ON sa.question_id = q.id
+                                      LEFT JOIN questions q ON sa.question_id = q.id
                                       WHERE sa.result_id IN ($ids_str)
                                       ORDER BY sa.id ASC");
     if ($sa_query) {

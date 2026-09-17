@@ -65,9 +65,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_question'])) {
             if (!$exam_exists) {
                 $error = "Invalid exam selected.";
             } elseif ($question_type === 'descriptive') {
-                $stmt = mysqli_prepare($conn, "UPDATE questions SET exam_id=?, question_text=? WHERE id=?");
+                $q_marks = max(0.5, (float)($_POST['marks'] ?? 5));
+                $stmt = mysqli_prepare($conn, "UPDATE questions SET exam_id=?, question_text=?, marks=? WHERE id=?");
                 if ($stmt) {
-                    mysqli_stmt_bind_param($stmt, "isi", $exam_id, $question_text, $question_id);
+                    mysqli_stmt_bind_param($stmt, "isdi", $exam_id, $question_text, $q_marks, $question_id);
                     if (mysqli_stmt_execute($stmt)) {
                         mysqli_stmt_close($stmt);
                         $_SESSION['flash_success'] = "Descriptive question updated successfully!";
@@ -82,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_question'])) {
                     $error = "Database query error.";
                 }
             } else {
+                $q_marks        = max(0.5, (float)($_POST['marks'] ?? 1));
                 $option_a       = trim($_POST['option_a'] ?? '');
                 $option_b       = trim($_POST['option_b'] ?? '');
                 $option_c       = trim($_POST['option_c'] ?? '');
@@ -95,9 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_question'])) {
                 } elseif (strlen($option_a) > 500 || strlen($option_b) > 500 || strlen($option_c) > 500 || strlen($option_d) > 500) {
                     $error = "Option text is too long (max 500 characters each).";
                 } else {
-                    $stmt = mysqli_prepare($conn, "UPDATE questions SET exam_id=?, question_text=?, option_a=?, option_b=?, option_c=?, option_d=?, correct_option=? WHERE id=?");
+                    $stmt = mysqli_prepare($conn, "UPDATE questions SET exam_id=?, question_text=?, marks=?, option_a=?, option_b=?, option_c=?, option_d=?, correct_option=? WHERE id=?");
                     if ($stmt) {
-                        mysqli_stmt_bind_param($stmt, "issssssi", $exam_id, $question_text, $option_a, $option_b, $option_c, $option_d, $correct_option, $question_id);
+                        mysqli_stmt_bind_param($stmt, "isdsssssi", $exam_id, $question_text, $q_marks, $option_a, $option_b, $option_c, $option_d, $correct_option, $question_id);
                         if (mysqli_stmt_execute($stmt)) {
                             mysqli_stmt_close($stmt);
                             $_SESSION['flash_success'] = "Question updated successfully!";
@@ -139,13 +141,18 @@ if ($exams_res) {
     }
 }
 
-// Build Question Query (no user-supplied raw string in WHERE — only cast int)
+// Build Question Query using prepared statement
 if ($selected_exam_id) {
-    $questions_res = mysqli_query($conn, "SELECT q.*, e.title AS exam_title 
+    $stmt = mysqli_prepare($conn, "SELECT q.*, e.title AS exam_title 
                        FROM questions q 
                        JOIN exams e ON q.exam_id = e.id 
-                       WHERE q.exam_id = $selected_exam_id
+                       WHERE q.exam_id = ?
                        ORDER BY q.exam_id ASC, q.id ASC");
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, "i", $selected_exam_id);
+        mysqli_stmt_execute($stmt);
+        $questions_res = mysqli_stmt_get_result($stmt);
+    }
 } else {
     $questions_res = mysqli_query($conn, "SELECT q.*, e.title AS exam_title 
                        FROM questions q 
@@ -209,12 +216,20 @@ if ($selected_exam_id) {
     </div>
 </div>
 
+<?php 
+$questions_list = [];
+if ($questions_res && mysqli_num_rows($questions_res) > 0) {
+    while ($row = mysqli_fetch_assoc($questions_res)) {
+        $questions_list[] = $row;
+    }
+}
+?>
 <!-- Questions List -->
-<?php if ($questions_res && mysqli_num_rows($questions_res) > 0): ?>
+<?php if (!empty($questions_list)): ?>
     <div class="row g-3">
         <?php 
         $count = 1;
-        while ($q = mysqli_fetch_assoc($questions_res)): 
+        foreach ($questions_list as $q): 
         ?>
             <div class="col-12">
                 <div class="card shadow-sm border-0 rounded-4">
@@ -227,6 +242,9 @@ if ($selected_exam_id) {
                             <?php else: ?>
                                 <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill">MCQ</span>
                             <?php endif; ?>
+                            <span class="badge rounded-pill px-2.5 py-1 fw-bold" style="background:#eef2ff; color:#4f46e5; border: 1px solid #c7d2fe;">
+                                <i class="bi bi-award me-1"></i><?php echo rtrim(rtrim(number_format((float)($q['marks'] ?? 1), 2), '0'), '.'); ?> marks
+                            </span>
                         </div>
                         <div class="btn-group btn-group-sm">
                             <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editQuestionModal<?php echo $q['id']; ?>">
@@ -290,84 +308,91 @@ if ($selected_exam_id) {
                     </div>
                 </div>
             </div>
+        <?php endforeach; ?>
+    </div>
 
-            <!-- Edit Question Modal -->
-            <div class="modal fade" id="editQuestionModal<?php echo $q['id']; ?>" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <form method="POST" action="manage-questions.php<?php echo $selected_exam_id ? '?exam_id='.$selected_exam_id : ''; ?>">
-                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                            <div class="modal-header bg-light">
-                                <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Question</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <!-- Edit Question Modals -->
+    <?php foreach ($questions_list as $q): ?>
+        <div class="modal fade" id="editQuestionModal<?php echo $q['id']; ?>" tabindex="-1">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                    <form method="POST" action="manage-questions.php<?php echo $selected_exam_id ? '?exam_id='.$selected_exam_id : ''; ?>">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                        <div class="modal-header bg-light">
+                            <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Question</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <input type="hidden" name="edit_question" value="1">
+                            <input type="hidden" name="question_id" value="<?php echo $q['id']; ?>">
+                            <input type="hidden" name="question_type" value="<?php echo $q['question_type'] ?? 'mcq'; ?>">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Target Exam</label>
+                                <select name="exam_id" class="form-select" required>
+                                    <?php foreach ($all_exams as $ex): ?>
+                                        <option value="<?php echo $ex['id']; ?>" <?php echo ($q['exam_id'] == $ex['id']) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($ex['title']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
-                            <div class="modal-body p-4">
-                                <input type="hidden" name="edit_question" value="1">
-                                <input type="hidden" name="question_id" value="<?php echo $q['id']; ?>">
-                                <input type="hidden" name="question_type" value="<?php echo $q['question_type'] ?? 'mcq'; ?>">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Question Text</label>
+                                <textarea name="question_text" class="form-control" rows="3" required maxlength="2000"><?php echo htmlspecialchars($q['question_text']); ?></textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                 <label class="form-label fw-semibold"><i class="bi bi-award text-primary me-1"></i> Marks for this Question</label>
+                                 <input type="number" name="marks" class="form-control" min="0.5" max="100" step="0.5" value="<?php echo rtrim(rtrim(number_format((float)($q['marks'] ?? 1), 2), '0'), '.'); ?>" style="max-width: 160px;" required>
+                                 <div class="form-text">Points awarded for a correct response.</div>
+                             </div>
+
+                            <?php if (($q['question_type'] ?? 'mcq') === 'descriptive'): ?>
+                                <div class="alert alert-info border-0 bg-info-subtle">
+                                    <i class="bi bi-info-circle me-1"></i> This is a descriptive question. Options and correct answer are not required.
+                                </div>
+                            <?php else: ?>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Option A</label>
+                                        <input type="text" name="option_a" class="form-control" value="<?php echo htmlspecialchars($q['option_a']); ?>" required maxlength="500">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Option B</label>
+                                        <input type="text" name="option_b" class="form-control" value="<?php echo htmlspecialchars($q['option_b']); ?>" required maxlength="500">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Option C</label>
+                                        <input type="text" name="option_c" class="form-control" value="<?php echo htmlspecialchars($q['option_c']); ?>" required maxlength="500">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Option D</label>
+                                        <input type="text" name="option_d" class="form-control" value="<?php echo htmlspecialchars($q['option_d']); ?>" required maxlength="500">
+                                    </div>
+                                </div>
 
                                 <div class="mb-3">
-                                    <label class="form-label fw-semibold">Target Exam</label>
-                                    <select name="exam_id" class="form-select" required>
-                                        <?php foreach ($all_exams as $ex): ?>
-                                            <option value="<?php echo $ex['id']; ?>" <?php echo ($q['exam_id'] == $ex['id']) ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($ex['title']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
+                                    <label class="form-label fw-semibold text-primary">Correct Option</label>
+                                    <select name="correct_option" class="form-select" required>
+                                        <option value="A" <?php echo ($q['correct_option'] === 'A') ? 'selected' : ''; ?>>Option A</option>
+                                        <option value="B" <?php echo ($q['correct_option'] === 'B') ? 'selected' : ''; ?>>Option B</option>
+                                        <option value="C" <?php echo ($q['correct_option'] === 'C') ? 'selected' : ''; ?>>Option C</option>
+                                        <option value="D" <?php echo ($q['correct_option'] === 'D') ? 'selected' : ''; ?>>Option D</option>
                                     </select>
                                 </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Question Text</label>
-                                    <textarea name="question_text" class="form-control" rows="3" required maxlength="2000"><?php echo htmlspecialchars($q['question_text']); ?></textarea>
-                                </div>
-
-                                <?php if (($q['question_type'] ?? 'mcq') === 'descriptive'): ?>
-                                    <div class="alert alert-info border-0 bg-info-subtle">
-                                        <i class="bi bi-info-circle me-1"></i> This is a descriptive question. Options and correct answer are not required.
-                                    </div>
-                                <?php else: ?>
-                                    <div class="row g-3 mb-3">
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-semibold">Option A</label>
-                                            <input type="text" name="option_a" class="form-control" value="<?php echo htmlspecialchars($q['option_a']); ?>" required maxlength="500">
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-semibold">Option B</label>
-                                            <input type="text" name="option_b" class="form-control" value="<?php echo htmlspecialchars($q['option_b']); ?>" required maxlength="500">
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-semibold">Option C</label>
-                                            <input type="text" name="option_c" class="form-control" value="<?php echo htmlspecialchars($q['option_c']); ?>" required maxlength="500">
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-semibold">Option D</label>
-                                            <input type="text" name="option_d" class="form-control" value="<?php echo htmlspecialchars($q['option_d']); ?>" required maxlength="500">
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <label class="form-label fw-semibold text-primary">Correct Option</label>
-                                        <select name="correct_option" class="form-select" required>
-                                            <option value="A" <?php echo ($q['correct_option'] === 'A') ? 'selected' : ''; ?>>Option A</option>
-                                            <option value="B" <?php echo ($q['correct_option'] === 'B') ? 'selected' : ''; ?>>Option B</option>
-                                            <option value="C" <?php echo ($q['correct_option'] === 'C') ? 'selected' : ''; ?>>Option C</option>
-                                            <option value="D" <?php echo ($q['correct_option'] === 'D') ? 'selected' : ''; ?>>Option D</option>
-                                        </select>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="modal-footer bg-light">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-primary">Update Question</button>
-                            </div>
-                        </form>
-                    </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="modal-footer bg-light">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Update Question</button>
+                        </div>
+                    </form>
                 </div>
             </div>
-
-        <?php endwhile; ?>
-    </div>
+        </div>
+    <?php endforeach; ?>
 <?php else: ?>
     <div class="card shadow-sm border-0 rounded-4 p-5 text-center">
         <div class="py-4">

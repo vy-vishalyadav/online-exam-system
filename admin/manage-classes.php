@@ -262,36 +262,6 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
                         </td>
                     </tr>
 
-                    <!-- Edit Class Modal -->
-                    <div class="modal fade text-start" id="editClassModal<?php echo $c['id']; ?>" tabindex="-1">
-                        <div class="modal-dialog"><div class="modal-content">
-                            <form method="POST">
-                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                                <input type="hidden" name="edit_class" value="1">
-                                <input type="hidden" name="class_id" value="<?php echo $c['id']; ?>">
-                                <div class="modal-header bg-light"><h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Class</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-                                <div class="modal-body p-4">
-                                    <div class="mb-3">
-                                        <label class="form-label fw-semibold">Class Name</label>
-                                        <input type="text" name="name" class="form-control text-uppercase" value="<?php echo htmlspecialchars($c['name']); ?>" required maxlength="50">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-semibold">Description</label>
-                                        <input type="text" name="description" class="form-control" value="<?php echo htmlspecialchars($c['description'] ?? ''); ?>" maxlength="200">
-                                    </div>
-                                    <div class="mb-0">
-                                        <label class="form-label fw-semibold">Sort Order</label>
-                                        <input type="number" name="sort_order" class="form-control" value="<?php echo (int)$c['sort_order']; ?>" min="0">
-                                        <div class="form-text">Lower number = shown first (e.g. FYIT=1, SYIT=2, TYIT=3)</div>
-                                    </div>
-                                </div>
-                                <div class="modal-footer bg-light">
-                                    <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                    <button class="btn btn-primary">Save Changes</button>
-                                </div>
-                            </form>
-                        </div></div>
-                    </div>
                     <?php endforeach; endif; ?>
                 </tbody>
             </table>
@@ -299,10 +269,51 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
     </div>
 </div>
 
+<!-- Edit Class Modals -->
+<?php if (!empty($classes)): ?>
+    <?php foreach ($classes as $c): ?>
+    <div class="modal fade text-start" id="editClassModal<?php echo $c['id']; ?>" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                    <input type="hidden" name="edit_class" value="1">
+                    <input type="hidden" name="class_id" value="<?php echo $c['id']; ?>">
+                    <div class="modal-header bg-light">
+                        <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Class</h5>
+                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Class Name</label>
+                            <input type="text" name="name" class="form-control text-uppercase" value="<?php echo htmlspecialchars($c['name']); ?>" required maxlength="50">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Description</label>
+                            <input type="text" name="description" class="form-control" value="<?php echo htmlspecialchars($c['description'] ?? ''); ?>" maxlength="200">
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label fw-semibold">Sort Order</label>
+                            <input type="number" name="sort_order" class="form-control" value="<?php echo (int)$c['sort_order']; ?>" min="0">
+                            <div class="form-text">Lower number = shown first (e.g. FYIT=1, SYIT=2, TYIT=3)</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+<?php endif; ?>
+
 <!-- Add Class Modal -->
 <div class="modal fade" id="addClassModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content">
-        <form method="POST">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <form method="POST">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <input type="hidden" name="add_class" value="1">
             <div class="modal-header bg-primary text-white"><h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Add New Class</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>

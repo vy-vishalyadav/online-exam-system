@@ -32,6 +32,7 @@ date_default_timezone_set('Asia/Kolkata');
 @mysqli_query($conn, "SET time_zone = '+05:30'");
 
 // Auto-migrate schema updates if not present
+if (!function_exists('run_auto_migrations')) {
 function run_auto_migrations($conn) {
     if (!$conn) return;
 
@@ -175,6 +176,7 @@ function run_auto_migrations($conn) {
     if ($check && mysqli_num_rows($check) === 0) {
         @mysqli_query($conn, "ALTER TABLE admin ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
     }
+}
 }
 
 run_auto_migrations($conn);

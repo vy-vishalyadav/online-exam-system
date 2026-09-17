@@ -2,8 +2,9 @@
 --  Online Exam System — Complete Database Setup
 -- ============================================================
 
--- Automatically selects your InfinityFree database:
-USE `if0_42825922_exam`;
+-- Automatically selects your database (adjust if importing directly):
+-- USE `if0_42825922_exam`; -- For InfinityFree Cloud
+-- USE `online_exam_db`;    -- For Local XAMPP
 
 -- ─────────────────────────────────────────────
 --  TABLE: admin
@@ -216,14 +217,14 @@ INSERT IGNORE INTO `exam_class_assignments` (`exam_id`, `class_id`) VALUES
     (4, 3),                 -- Exam 4 assigned to TYIT
     (5, 1), (5, 2), (5, 3); -- Exam 5 open to all classes
 
--- 6. Sample Questions — Exam 1: General Knowledge (MCQ)
+-- 6. Sample Questions — Exam 1: General Knowledge (MCQ) - 2 marks each (10 marks total)
 INSERT INTO `questions` (`id`, `exam_id`, `question_text`, `question_type`, `marks`, `option_a`, `option_b`, `option_c`, `option_d`, `correct_option`) VALUES
-    (1, 1, 'Which planet is known as the Red Planet?',    'mcq', 1.00, 'Venus',           'Mars',    'Jupiter',           'Saturn',  'B'),
-    (2, 1, 'What is the capital city of France?',        'mcq', 1.00, 'Madrid',          'Berlin',  'Paris',             'Rome',    'C'),
-    (3, 1, 'Who painted the Mona Lisa?',                 'mcq', 1.00, 'Vincent van Gogh','Picasso', 'Leonardo da Vinci', 'Monet',   'C'),
-    (4, 1, 'Which element has chemical symbol "O"?',     'mcq', 1.00, 'Gold',            'Oxygen',  'Osmium',            'Silver',  'B'),
-    (5, 1, 'What is the largest ocean on Earth?',        'mcq', 1.00, 'Atlantic',        'Indian',  'Arctic',            'Pacific', 'D')
-ON DUPLICATE KEY UPDATE `question_text` = VALUES(`question_text`), `correct_option` = VALUES(`correct_option`);
+    (1, 1, 'Which planet is known as the Red Planet?',    'mcq', 2.00, 'Venus',           'Mars',    'Jupiter',           'Saturn',  'B'),
+    (2, 1, 'What is the capital city of France?',        'mcq', 2.00, 'Madrid',          'Berlin',  'Paris',             'Rome',    'C'),
+    (3, 1, 'Who painted the Mona Lisa?',                 'mcq', 2.00, 'Vincent van Gogh','Picasso', 'Leonardo da Vinci', 'Monet',   'C'),
+    (4, 1, 'Which element has chemical symbol "O"?',     'mcq', 2.00, 'Gold',            'Oxygen',  'Osmium',            'Silver',  'B'),
+    (5, 1, 'What is the largest ocean on Earth?',        'mcq', 2.00, 'Atlantic',        'Indian',  'Arctic',            'Pacific', 'D')
+ON DUPLICATE KEY UPDATE `question_text` = VALUES(`question_text`), `marks` = VALUES(`marks`), `correct_option` = VALUES(`correct_option`);
 
 -- 7. Sample Questions — Exam 2: Computer Fundamentals (MCQ)
 INSERT INTO `questions` (`id`, `exam_id`, `question_text`, `question_type`, `marks`, `option_a`, `option_b`, `option_c`, `option_d`, `correct_option`) VALUES

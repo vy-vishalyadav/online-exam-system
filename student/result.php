@@ -38,9 +38,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
         // Consume token
         unset($_SESSION[$submit_token_key]);
 
-        // Phase 1: also check server-side session hasn't been submitted already
+        // Phase 1: check server-side session hasn't been submitted already & validate elapsed time
         $ss = mysqli_prepare($conn,
-            "SELECT submitted FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
+            "SELECT es.submitted, es.duration_minutes,
+                    TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
+                    e.end_at,
+                    TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
+             FROM exam_sessions es
+             JOIN exams e ON e.id = es.exam_id
+             WHERE es.student_id=? AND es.exam_id=? LIMIT 1");
+        $ss_row = null;
         if ($ss) {
             mysqli_stmt_bind_param($ss, "ii", $student_id, $exam_id);
             mysqli_stmt_execute($ss);
@@ -63,7 +70,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
         mysqli_stmt_close($stmt);
 
         if ($exam) {
-            $questions_res   = mysqli_query($conn, "SELECT * FROM questions WHERE exam_id = " . (int)$exam_id . " ORDER BY id ASC");
+            $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+            if ($q_stmt) {
+                mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
+                mysqli_stmt_execute($q_stmt);
+                $questions_res = mysqli_stmt_get_result($q_stmt);
+            } else {
+                $questions_res = false;
+            }
             $total_questions = 0;
             $mcq_count       = 0;
             $desc_count      = 0;
@@ -73,10 +87,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             // Phase 1: get option_maps from session (shuffled option labels)
             $option_maps = $_SESSION['option_maps_' . $exam_id] ?? [];
 
-            $user_mcq_answers  = $_POST['answer'] ?? [];
-            $user_desc_answers = $_POST['descriptive_answer'] ?? [];
+            // Server-authoritative timer validation:
+            // Check if submission exceeds allowed duration or schedule window (+30s network grace)
+            $allowed_sec = ((int)($ss_row['duration_minutes'] ?? $exam['duration_minutes'] ?? 30)) * 60;
+            $elapsed_sec = (int)($ss_row['elapsed_seconds'] ?? 0);
+            $is_window_passed = (!empty($ss_row['end_at']) && (int)($ss_row['window_rem_sec'] ?? 0) < -30);
+            $is_duration_exceeded = ($elapsed_sec > ($allowed_sec + 30));
 
-            // Phase 1: fallback — load from draft_answers if POST is empty (e.g. auto-submit)
+            if ($is_duration_exceeded || $is_window_passed) {
+                // Reject late POST answers — load drafts auto-saved before timer expiration
+                $user_mcq_answers  = [];
+                $user_desc_answers = [];
+            } else {
+                $user_mcq_answers  = $_POST['answer'] ?? [];
+                $user_desc_answers = $_POST['descriptive_answer'] ?? [];
+            }
+
+            // Phase 1: fallback — load from draft_answers if POST is empty (e.g. auto-submit or late submission)
             if (empty($user_mcq_answers) && empty($user_desc_answers)) {
                 $df = mysqli_prepare($conn,
                     "SELECT question_id, answer FROM draft_answers WHERE student_id=? AND exam_id=?");
@@ -252,14 +279,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_GET['exam_id'])) {
     $to_exam_id = (int)$_GET['exam_id'];
     if ($to_exam_id > 0) {
-        // Check not already submitted
-        $ts = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
+        // 1. Verify session exists, is not already submitted, and fetch timing
+        $ts = mysqli_prepare($conn,
+            "SELECT es.submitted, es.duration_minutes,
+                    TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
+                    e.end_at,
+                    TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
+             FROM exam_sessions es
+             JOIN exams e ON e.id = es.exam_id
+             WHERE es.student_id=? AND es.exam_id=? LIMIT 1");
         mysqli_stmt_bind_param($ts, "ii", $student_id, $to_exam_id);
         mysqli_stmt_execute($ts);
         $ts_row = mysqli_fetch_assoc(mysqli_stmt_get_result($ts));
         mysqli_stmt_close($ts);
 
         if ($ts_row && !$ts_row['submitted']) {
+            // 2. Check violation strikes count
+            $v_chk = mysqli_prepare($conn,
+                "SELECT COUNT(*) AS v_cnt FROM exam_violations 
+                 WHERE student_id = ? AND exam_id = ? 
+                   AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
+            mysqli_stmt_bind_param($v_chk, "ii", $student_id, $to_exam_id);
+            mysqli_stmt_execute($v_chk);
+            $v_res = mysqli_fetch_assoc(mysqli_stmt_get_result($v_chk));
+            mysqli_stmt_close($v_chk);
+            $v_count = (int)($v_res['v_cnt'] ?? 0);
+
+            // 3. Verify server-authoritative expiration: timer expired, schedule ended, or 3 strikes
+            $elapsed_sec     = (int)($ts_row['elapsed_seconds'] ?? 0);
+            $allowed_sec     = ((int)($ts_row['duration_minutes'] ?? 30)) * 60;
+            $is_time_up      = ($elapsed_sec >= $allowed_sec);
+            $is_window_up    = (!empty($ts_row['end_at']) && (int)($ts_row['window_rem_sec'] ?? 0) <= 0);
+            $is_disqualified = ($v_count >= 3);
+
+            if (!$is_time_up && !$is_window_up && !$is_disqualified) {
+                // Premature trigger without valid expiry — prevent unauthorized termination
+                header("Location: exam.php?id={$to_exam_id}");
+                exit;
+            }
+
             // Load draft answers and score them
             $to_exam_stmt = mysqli_prepare($conn, "SELECT * FROM exams WHERE id=? LIMIT 1");
             mysqli_stmt_bind_param($to_exam_stmt, "i", $to_exam_id);
@@ -277,16 +335,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                 mysqli_stmt_close($df);
 
                 $option_maps = $_SESSION['option_maps_' . $to_exam_id] ?? [];
-                $qs_res = mysqli_query($conn, "SELECT * FROM questions WHERE exam_id=" . $to_exam_id . " ORDER BY id ASC");
+                $qs_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+                $qs_res = false;
+                if ($qs_stmt) {
+                    mysqli_stmt_bind_param($qs_stmt, "i", $to_exam_id);
+                    mysqli_stmt_execute($qs_stmt);
+                    $qs_res = mysqli_stmt_get_result($qs_stmt);
+                }
                 $total_q = $correct_c = $desc_c = $mcq_c = 0;
+                $earned_mcq_marks = 0.0;
+                $total_exam_marks = 0.0;
                 $rec_answers = [];
-                while ($q = mysqli_fetch_assoc($qs_res)) {
+                if ($qs_res) {
+                    while ($q = mysqli_fetch_assoc($qs_res)) {
                     $total_q++;
                     $q_type = $q['question_type'] ?? 'mcq';
+                    $q_marks = isset($q['marks']) && (float)$q['marks'] > 0 ? (float)$q['marks'] : ($q_type === 'descriptive' ? 5.0 : 1.0);
+                    $total_exam_marks += $q_marks;
                     $ans    = $drafts[$q['id']] ?? '';
                     if ($q_type === 'descriptive') {
                         $desc_c++;
-                        $rec_answers[] = ['question_id'=>$q['id'],'question_type'=>'descriptive','question_text'=>$q['question_text'],'user_ans'=>$ans,'is_correct'=>null,'marks'=>0];
+                        $rec_answers[] = ['question_id'=>$q['id'],'question_type'=>'descriptive','question_text'=>$q['question_text'],'user_ans'=>$ans,'is_correct'=>null,'marks'=>0,'question_marks'=>$q_marks];
                     } else {
                         $mcq_c++;
                         $raw = strtoupper(trim($ans));
@@ -294,16 +363,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                         $orig_correct = strtoupper($q['correct_option'] ?? 'A');
                         $shuffled_correct = !empty($option_maps[$q['id']]) ? ($option_maps[$q['id']]['correct'] ?? $orig_correct) : $orig_correct;
                         $is_c = ($user_a !== null && $user_a === $shuffled_correct);
-                        if ($is_c) $correct_c++;
-                        $rec_answers[] = ['question_id'=>$q['id'],'question_type'=>'mcq','question_text'=>$q['question_text'],'option_a'=>$q['option_a'],'option_b'=>$q['option_b'],'option_c'=>$q['option_c'],'option_d'=>$q['option_d'],'user_ans'=>$user_a,'correct_ans'=>$orig_correct,'is_correct'=>$is_c?1:0,'marks'=>$is_c?1:0];
+                        $earned_marks = $is_c ? $q_marks : 0.0;
+                        if ($is_c) {
+                            $correct_c++;
+                            $earned_mcq_marks += $q_marks;
+                        }
+                        $rec_answers[] = ['question_id'=>$q['id'],'question_type'=>'mcq','question_text'=>$q['question_text'],'option_a'=>$q['option_a'],'option_b'=>$q['option_b'],'option_c'=>$q['option_c'],'option_d'=>$q['option_d'],'user_ans'=>$user_a,'correct_ans'=>$orig_correct,'is_correct'=>$is_c?1:0,'marks'=>$earned_marks,'question_marks'=>$q_marks];
                     }
                 }
+                }
+                if ($qs_stmt) { mysqli_stmt_close($qs_stmt); }
                 unset($_SESSION['option_maps_' . $to_exam_id]);
 
                 $status_to = ($desc_c > 0 || ($to_exam['result_mode'] ?? 'instant') === 'pending') ? 'pending' : 'published';
-                // Score = correct MCQs ÷ total MCQs × 100 (matches POST handler formula at line 164)
-                // Descriptive questions are graded later by admin and must not dilute the MCQ score
-                $score_to  = $mcq_c > 0 ? round(($correct_c / $mcq_c) * 100) : 0;
+                // Score is raw marks awarded (descriptive evaluated later by instructor), matching POST handler at line 174
+                $score_to  = (int)round($earned_mcq_marks);
 
                 $ins_r = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?,?,?,?,NOW())");
                 mysqli_stmt_bind_param($ins_r, "iiis", $student_id, $to_exam_id, $score_to, $status_to);
@@ -328,11 +402,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                     mysqli_stmt_bind_param($cdel, "ii", $student_id, $to_exam_id);
                     mysqli_stmt_execute($cdel); mysqli_stmt_close($cdel);
 
+                    $passed = ($total_exam_marks > 0) ? (($score_to / $total_exam_marks) >= 0.5) : false;
                     $_SESSION['submission_review'] = [
                         'result_id'=>$new_rid,'exam_title'=>$to_exam['title'],'status'=>$status_to,
                         'has_descriptive'=>$desc_c>0,'desc_count'=>$desc_c,'total'=>$total_q,
+                        'total_marks'=>$total_exam_marks,
                         'mcq_count'=>$mcq_c,'correct'=>$correct_c,'wrong'=>max(0, $mcq_c - $correct_c),'score'=>$score_to,
-                        'passed'=>$score_to>=50,'items'=>$rec_answers,'timed_out'=>true
+                        'passed'=>$passed,'items'=>$rec_answers,'timed_out'=>true
                     ];
                 }
             }
@@ -355,10 +431,10 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
     $vr_stmt = null;
     if ($view_result_id > 0) {
         $vr_stmt = mysqli_prepare($conn,
-            "SELECT r.*, e.title AS exam_title,
+            "SELECT r.*, COALESCE(e.title, 'Examination (Archived)') AS exam_title,
                     (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
              FROM results r
-             JOIN exams e ON r.exam_id = e.id
+             LEFT JOIN exams e ON r.exam_id = e.id
              WHERE r.student_id = ? AND r.id = ?
              LIMIT 1");
         if ($vr_stmt) {
@@ -366,10 +442,10 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
         }
     } else {
         $vr_stmt = mysqli_prepare($conn,
-            "SELECT r.*, e.title AS exam_title,
+            "SELECT r.*, COALESCE(e.title, 'Examination (Archived)') AS exam_title,
                     (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
              FROM results r
-             JOIN exams e ON r.exam_id = e.id
+             LEFT JOIN exams e ON r.exam_id = e.id
              WHERE r.student_id = ? AND r.exam_id = ?
              ORDER BY r.attempted_at DESC LIMIT 1");
         if ($vr_stmt) {
@@ -391,14 +467,16 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
             $sa_has_rows  = false;
 
             $sa_stmt = mysqli_prepare($conn,
-                "SELECT sa.*, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
-                        q.correct_option, q.question_type
+                "SELECT sa.*, COALESCE(q.question_text, CONCAT('Question #', sa.question_id)) AS question_text,
+                        q.option_a, q.option_b, q.option_c, q.option_d,
+                        q.correct_option, COALESCE(q.question_type, 'mcq') AS question_type
                  FROM student_answers sa
-                 JOIN questions q ON sa.question_id = q.id
+                 LEFT JOIN questions q ON sa.question_id = q.id
                  WHERE sa.result_id = ?
                  ORDER BY sa.id ASC");
             if ($sa_stmt) {
-                mysqli_stmt_bind_param($sa_stmt, "i", (int)$vr['id']);
+                $v_result_id = (int)$vr['id'];
+                mysqli_stmt_bind_param($sa_stmt, "i", $v_result_id);
                 mysqli_stmt_execute($sa_stmt);
                 $sa_res = mysqli_stmt_get_result($sa_stmt);
                 if ($sa_res && $sa_res instanceof mysqli_result) {
@@ -446,7 +524,8 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
                      WHERE exam_id = ?
                      ORDER BY id ASC");
                 if ($q_stmt) {
-                    mysqli_stmt_bind_param($q_stmt, "i", (int)$vr['exam_id']);
+                    $v_exam_id = (int)$vr['exam_id'];
+                    mysqli_stmt_bind_param($q_stmt, "i", $v_exam_id);
                     mysqli_stmt_execute($q_stmt);
                     $q_res = mysqli_stmt_get_result($q_stmt);
                     if ($q_res && $q_res instanceof mysqli_result) {
@@ -505,6 +584,8 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
                 'items'           => $view_items,
                 'is_historical'   => true,
             ];
+        } else {
+            $error_msg = "The requested examination result record could not be found, or you do not have permission to view it.";
         }
     }
 }
@@ -519,12 +600,12 @@ if (!empty($_SESSION['flash_already_submitted'])) {
 }
 
 // Fetch all past results for this student with time taken and question count
-$stmt = mysqli_prepare($conn, "SELECT r.*, e.title AS exam_title,
+$stmt = mysqli_prepare($conn, "SELECT r.*, COALESCE(e.title, 'Examination (Archived)') AS exam_title,
                                 es.time_taken_seconds,
                                 (SELECT COUNT(*) FROM questions q WHERE q.exam_id = r.exam_id) AS q_count,
                                 (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = r.exam_id) AS exam_total_marks
                                 FROM results r
-                                JOIN exams e ON r.exam_id = e.id
+                                LEFT JOIN exams e ON r.exam_id = e.id
                                 LEFT JOIN exam_sessions es
                                     ON es.student_id = r.student_id AND es.exam_id = r.exam_id
                                 WHERE r.student_id = ?
@@ -832,9 +913,13 @@ mysqli_stmt_close($stmt);
 </div>
 
 <div class="card shadow-sm border-0 rounded-4">
+    <!-- Top Horizontal Scrollbar Slider -->
+    <div class="table-scroll-top-container d-none" id="studentResultsTableScrollTop">
+        <div class="table-scroll-top-inner" id="studentResultsTableScrollTopInner"></div>
+    </div>
     <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table custom-table align-middle mb-0">
+        <div class="table-responsive" id="studentResultsTableResponsive">
+            <table class="table custom-table table-sticky-actions align-middle mb-0">
                 <thead>
                     <tr>
                         <th class="ps-4">#</th>
@@ -854,7 +939,6 @@ mysqli_stmt_close($stmt);
                         foreach ($past_results as $r):
                             $is_pending = (($r['status'] ?? 'published') === 'pending');
                             $r_q_count  = (int)($r['q_count'] ?? 0);
-                            $r_marks    = ($r_q_count > 0) ? round($r['score'] * $r_q_count / 100) : '—';
                     ?>
                         <tr>
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
@@ -936,5 +1020,48 @@ mysqli_stmt_close($stmt);
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const topScroll = document.getElementById('studentResultsTableScrollTop');
+    const tableCont = document.getElementById('studentResultsTableResponsive');
+    if (topScroll && tableCont) {
+        const topInner = document.getElementById('studentResultsTableScrollTopInner');
+        const table = tableCont.querySelector('table');
+
+        function updateScrollWidth() {
+            if (!table) return;
+            const scrollW = table.scrollWidth;
+            const clientW = tableCont.clientWidth;
+            if (scrollW > clientW + 5) {
+                topScroll.classList.remove('d-none');
+                if (topInner) topInner.style.width = scrollW + 'px';
+            } else {
+                topScroll.classList.add('d-none');
+            }
+        }
+
+        let isSyncing = false;
+        topScroll.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                tableCont.scrollLeft = topScroll.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+        tableCont.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                topScroll.scrollLeft = tableCont.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+
+        window.addEventListener('resize', updateScrollWidth);
+        updateScrollWidth();
+        setTimeout(updateScrollWidth, 300);
+    }
+});
+</script>
 
 <?php include '../includes/footer.php'; ?>

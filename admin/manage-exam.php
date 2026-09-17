@@ -172,6 +172,12 @@ $exams = mysqli_query($conn, "SELECT e.*,
     (SELECT GROUP_CONCAT(eca2.class_id SEPARATOR ',')
      FROM exam_class_assignments eca2 WHERE eca2.exam_id = e.id) AS assigned_class_ids
     FROM exams e ORDER BY e.id DESC");
+$exams_list = [];
+if ($exams) {
+    while ($row = mysqli_fetch_assoc($exams)) {
+        $exams_list[] = $row;
+    }
+}
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -225,9 +231,9 @@ $exams = mysqli_query($conn, "SELECT e.*,
                 </thead>
                 <tbody>
                     <?php
-                    if ($exams && mysqli_num_rows($exams) > 0):
+                    if (!empty($exams_list)):
                         $i = 1;
-                        while ($e = mysqli_fetch_assoc($exams)):
+                        foreach ($exams_list as $e):
                             $has_desc = ((int)($e['desc_count'] ?? 0)) > 0;
                             $mode = $e['result_mode'] ?? 'instant';
                             $assigned_ids = $e['assigned_class_ids'] ? array_map('intval', explode(',', $e['assigned_class_ids'])) : [];
@@ -309,79 +315,14 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                         </button>
                                     </form>
                                 </div>
-
-                                <!-- Edit Exam Modal -->
-                                <div class="modal fade text-start" id="editExamModal<?php echo $e['id']; ?>" tabindex="-1">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <form method="POST" action="manage-exam.php">
-                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                                                <div class="modal-header bg-light">
-                                                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Exam</h5>
-                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <div class="modal-body p-4">
-                                                    <input type="hidden" name="edit_exam" value="1">
-                                                    <input type="hidden" name="exam_id" value="<?php echo $e['id']; ?>">
-                                                    <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Exam Title <span class="text-danger">*</span></label>
-                                                        <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($e['title']); ?>" required maxlength="200">
-                                                    </div>
-                                                    <input type="hidden" name="duration_minutes" id="edit_dur_<?php echo $e['id']; ?>" value="<?php echo (int)$e['duration_minutes']; ?>">
-                                                    <input type="hidden" name="result_mode" value="<?php echo htmlspecialchars($mode); ?>">
-                                                    <hr class="my-3">
-                                                    <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
-                                                    <div class="row g-3">
-                                                        <div class="col-md-6">
-                                                            <label class="form-label fw-semibold">Opens At <span class="text-danger">*</span></label>
-                                                            <input type="datetime-local" name="start_at" id="edit_start_<?php echo $e['id']; ?>" class="form-control edit-start-input" data-exam-id="<?php echo $e['id']; ?>"
-                                                                value="<?php echo $e['start_at'] ? date('Y-m-d\TH:i', strtotime($e['start_at'])) : ''; ?>" required>
-                                                            <div class="form-text">When all students can begin</div>
-                                                        </div>
-                                                        <div class="col-md-6">
-                                                            <label class="form-label fw-semibold">Closes At <span class="text-danger">*</span></label>
-                                                            <input type="datetime-local" name="end_at" id="edit_end_<?php echo $e['id']; ?>" class="form-control edit-end-input" data-exam-id="<?php echo $e['id']; ?>"
-                                                                value="<?php echo $e['end_at'] ? date('Y-m-d\TH:i', strtotime($e['end_at'])) : ''; ?>" required>
-                                                            <div class="form-text">Strict synchronized deadline for all students</div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="mt-2 text-muted small">
-                                                        <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-primary-subtle text-primary fw-bold" id="edit_calc_badge_<?php echo $e['id']; ?>"><?php echo (int)$e['duration_minutes']; ?> mins</span>
-                                                    </div>
-                                                    <hr class="my-3">
-                                                    <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
-                                                    <div class="d-flex flex-wrap gap-2">
-                                                        <?php foreach ($all_classes as $cl): ?>
-                                                        <div class="form-check form-check-inline">
-                                                            <input class="form-check-input" type="checkbox" name="class_ids[]"
-                                                                id="ec<?php echo $e['id']; ?>_c<?php echo $cl['id']; ?>"
-                                                                value="<?php echo $cl['id']; ?>"
-                                                                <?php echo in_array($cl['id'], $assigned_ids) ? 'checked' : ''; ?>>
-                                                            <label class="form-check-label fw-semibold" for="ec<?php echo $e['id']; ?>_c<?php echo $cl['id']; ?>">
-                                                                <?php echo htmlspecialchars($cl['name']); ?>
-                                                            </label>
-                                                        </div>
-                                                        <?php endforeach; ?>
-                                                    </div>
-                                                    <div class="form-text mt-1"><i class="bi bi-globe me-1"></i>Leave all unchecked = visible to <strong>all students</strong>.</div>
-                                                </div>
-                                                <div class="modal-footer bg-light">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-primary">Update Exam</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-
                             </td>
                         </tr>
                     <?php
-                        endwhile;
+                        endforeach;
                     else:
                     ?>
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
+                            <td colspan="8" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i> No exams found. Click "Add New Exam" to create one.
                             </td>
                         </tr>
@@ -392,10 +333,82 @@ $exams = mysqli_query($conn, "SELECT e.*,
     </div>
 </div>
 
+<!-- Edit Exam Modals -->
+<?php if (!empty($exams_list)): ?>
+    <?php foreach ($exams_list as $e): 
+        $has_desc = ((int)($e['desc_count'] ?? 0)) > 0;
+        $mode = $e['result_mode'] ?? 'instant';
+        $assigned_ids = $e['assigned_class_ids'] ? array_map('intval', explode(',', $e['assigned_class_ids'])) : [];
+    ?>
+    <div class="modal fade text-start" id="editExamModal<?php echo $e['id']; ?>" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <form method="POST" action="manage-exam.php">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                    <div class="modal-header bg-light">
+                        <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Exam</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <input type="hidden" name="edit_exam" value="1">
+                        <input type="hidden" name="exam_id" value="<?php echo $e['id']; ?>">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Exam Title <span class="text-danger">*</span></label>
+                            <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($e['title']); ?>" required maxlength="200">
+                        </div>
+                        <input type="hidden" name="duration_minutes" id="edit_dur_<?php echo $e['id']; ?>" value="<?php echo (int)$e['duration_minutes']; ?>">
+                        <input type="hidden" name="result_mode" value="<?php echo htmlspecialchars($mode); ?>">
+                        <hr class="my-3">
+                        <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Opens At <span class="text-danger">*</span></label>
+                                <input type="datetime-local" name="start_at" id="edit_start_<?php echo $e['id']; ?>" class="form-control edit-start-input" data-exam-id="<?php echo $e['id']; ?>"
+                                    value="<?php echo $e['start_at'] ? date('Y-m-d\TH:i', strtotime($e['start_at'])) : ''; ?>" required>
+                                <div class="form-text">When all students can begin</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Closes At <span class="text-danger">*</span></label>
+                                <input type="datetime-local" name="end_at" id="edit_end_<?php echo $e['id']; ?>" class="form-control edit-end-input" data-exam-id="<?php echo $e['id']; ?>"
+                                    value="<?php echo $e['end_at'] ? date('Y-m-d\TH:i', strtotime($e['end_at'])) : ''; ?>" required>
+                                <div class="form-text">Strict synchronized deadline for all students</div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-muted small">
+                            <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-primary-subtle text-primary fw-bold" id="edit_calc_badge_<?php echo $e['id']; ?>"><?php echo (int)$e['duration_minutes']; ?> mins</span>
+                        </div>
+                        <hr class="my-3">
+                        <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php foreach ($all_classes as $cl): ?>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" name="class_ids[]"
+                                    id="ec<?php echo $e['id']; ?>_c<?php echo $cl['id']; ?>"
+                                    value="<?php echo $cl['id']; ?>"
+                                    <?php echo in_array($cl['id'], $assigned_ids) ? 'checked' : ''; ?>>
+                                <label class="form-check-label fw-semibold" for="ec<?php echo $e['id']; ?>_c<?php echo $cl['id']; ?>">
+                                    <?php echo htmlspecialchars($cl['name']); ?>
+                                </label>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="form-text mt-1"><i class="bi bi-globe me-1"></i>Leave all unchecked = visible to <strong>all students</strong>.</div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Exam</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+<?php endif; ?>
+
 <!-- Add Exam Modal -->
 <div class="modal fade" id="addExamModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
             <form method="POST" action="manage-exam.php">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <div class="modal-header bg-primary text-white">
