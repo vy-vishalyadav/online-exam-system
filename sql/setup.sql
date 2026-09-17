@@ -9,9 +9,10 @@ USE `if0_42825922_exam`;
 --  TABLE: admin
 -- ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS `admin` (
-    `id`       INT AUTO_INCREMENT PRIMARY KEY,
-    `username` VARCHAR(50)  NOT NULL UNIQUE,
-    `password` VARCHAR(255) NOT NULL
+    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+    `username`   VARCHAR(50)  NOT NULL UNIQUE,
+    `password`   VARCHAR(255) NOT NULL,
+    `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Default admin account  (username: admin | password: admin123)

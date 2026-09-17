@@ -7,17 +7,14 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+$q_classes   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM classes");
+$total_classes = ($q_classes ? mysqli_fetch_assoc($q_classes)['c'] : 0);
+
 $q_students  = mysqli_query($conn, "SELECT COUNT(*) AS c FROM students");
 $total_students = ($q_students ? mysqli_fetch_assoc($q_students)['c'] : 0);
 
 $q_exams     = mysqli_query($conn, "SELECT COUNT(*) AS c FROM exams");
 $total_exams = ($q_exams ? mysqli_fetch_assoc($q_exams)['c'] : 0);
-
-$q_questions = mysqli_query($conn, "SELECT COUNT(*) AS c FROM questions");
-$total_questions = ($q_questions ? mysqli_fetch_assoc($q_questions)['c'] : 0);
-
-$q_results   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results");
-$total_results = ($q_results ? mysqli_fetch_assoc($q_results)['c'] : 0);
 
 $q_pending   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results WHERE status = 'pending'");
 $pending_count = ($q_pending ? mysqli_fetch_assoc($q_pending)['c'] : 0);
@@ -32,7 +29,7 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
 
 <div class="mb-4">
     <h3 class="fw-bold text-dark mb-1">Admin Dashboard</h3>
-    <p class="text-muted mb-0">Overview of students, exams, questions, and attempt analytics.</p>
+    <p class="text-muted mb-0">Overview of classes, students, and active examination sessions.</p>
 </div>
 
 <?php if ($pending_count > 0): ?>
@@ -48,9 +45,18 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
     </a>
 <?php endif; ?>
 
-<!-- Stat Cards -->
-<div class="row g-3 mb-5">
-    <div class="col-md-6 col-xl-3">
+<!-- Stat Cards (3 Key Metrics) -->
+<div class="row g-4 mb-5">
+    <div class="col-md-4">
+        <a href="manage-classes.php" class="text-decoration-none">
+            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #0284c7 !important;">
+                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Classes</h6>
+                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_classes; ?></h2>
+                <i class="bi bi-diagram-3-fill stat-icon" style="color:#0284c7; opacity:0.12;"></i>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4">
         <a href="manage-students.php" class="text-decoration-none">
             <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #4f46e5 !important;">
                 <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Students</h6>
@@ -59,30 +65,12 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
             </div>
         </a>
     </div>
-    <div class="col-md-6 col-xl-3">
+    <div class="col-md-4">
         <a href="manage-exam.php" class="text-decoration-none">
             <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #059669 !important;">
                 <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Exams</h6>
                 <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_exams; ?></h2>
                 <i class="bi bi-journal-bookmark-fill stat-icon" style="color:#059669; opacity:0.12;"></i>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-6 col-xl-3">
-        <a href="manage-questions.php" class="text-decoration-none">
-            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #7c3aed !important;">
-                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Questions</h6>
-                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_questions; ?></h2>
-                <i class="bi bi-patch-question-fill stat-icon" style="color:#7c3aed; opacity:0.12;"></i>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-6 col-xl-3">
-        <a href="view-results.php" class="text-decoration-none">
-            <div class="stat-card bg-white border-0 shadow-sm rounded-4 p-4 position-relative overflow-hidden" style="border-top: 4px solid #d97706 !important;">
-                <h6 class="mb-1 fw-semibold text-muted small text-uppercase ls-1">Total Attempts</h6>
-                <h2 class="fw-extrabold mb-0 text-dark"><?php echo $total_results; ?></h2>
-                <i class="bi bi-bar-chart-fill stat-icon" style="color:#d97706; opacity:0.12;"></i>
             </div>
         </a>
     </div>

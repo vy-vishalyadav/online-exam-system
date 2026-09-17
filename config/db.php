@@ -169,6 +169,12 @@ function run_auto_migrations($conn) {
         class_id INT NOT NULL,
         PRIMARY KEY (exam_id, class_id)
     )");
+
+    // 15. admin.created_at column
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM admin LIKE 'created_at'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE admin ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    }
 }
 
 run_auto_migrations($conn);
