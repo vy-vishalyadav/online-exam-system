@@ -168,7 +168,8 @@ $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses
 $sql = "SELECT r.*, s.name AS student_name, s.email, c.name AS class_name,
          e.title AS exam_title,
          (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS total_q,
-         (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_q_count
+         (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_q_count,
+         (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
          FROM results r
          JOIN students s ON r.student_id = s.id
          LEFT JOIN classes c ON s.class_id = c.id
@@ -376,13 +377,17 @@ $published_count = $stats['published_count'] ?? 0;
                                 <?php endif; ?>
                             </td>
                             <td>
+                                <?php 
+                                $out_of = (float)($r['exam_total_marks'] ?? 0);
+                                $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
+                                ?>
                                 <?php if ($is_pending): ?>
                                     <span class="badge bg-warning-subtle text-warning border border-warning-subtle fw-bold">
-                                        Draft: <?php echo $r['score']; ?> pts
+                                        Draft: <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                     </span>
                                 <?php else: ?>
                                     <span class="fw-bold fs-6 text-primary">
-                                        <?php echo $r['score']; ?> pts
+                                        <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                     </span>
                                 <?php endif; ?>
                             </td>
@@ -520,7 +525,7 @@ $published_count = $stats['published_count'] ?? 0;
                                         <div class="card mb-3 border rounded-3 p-3 bg-white shadow-sm">
                                              <div class="d-flex justify-content-between align-items-start mb-2">
                                                  <span class="fw-bold text-dark">Q: <?php echo htmlspecialchars($d_item['question_text']); ?></span>
-                                                 <span class="badge bg-light text-dark border">Descriptive (Max <?php echo $max_marks; ?> pts)</span>
+                                                 <span class="badge bg-light text-dark border">Descriptive (Max <?php echo $max_marks; ?> marks)</span>
                                              </div>
 
                                              <div class="p-3 bg-light rounded-3 border mb-3">
@@ -625,7 +630,7 @@ $published_count = $stats['published_count'] ?? 0;
                                                max="<?php echo max(100, $total_max_marks); ?>" 
                                                value="<?php echo $r['score']; ?>" 
                                                required>
-                                        <span class="input-group-text fw-bold">pts</span>
+                                        <span class="input-group-text fw-bold">/ <?php echo $total_max_marks; ?> marks</span>
                                     </div>
                                     <?php if ($has_items && !empty($desc_items)): ?>
                                         <button type="button" 
@@ -640,8 +645,8 @@ $published_count = $stats['published_count'] ?? 0;
                                     <label class="form-label fw-bold text-dark mb-1">Grading Summary</label>
                                     <div class="border rounded-3 p-3 bg-white text-muted small">
                                         <div>Total Questions: <strong class="text-dark"><?php echo $r['total_q']; ?></strong> (<?php echo count($mcq_items); ?> MCQ, <?php echo count($desc_items); ?> Desc)</div>
-                                        <div>Total Max Marks: <strong class="text-dark"><?php echo $total_max_marks; ?> pts</strong></div>
-                                        <div>MCQ Marks Earned: <strong class="text-dark"><?php echo $mcq_earned_marks; ?> / <?php echo $mcq_total_marks; ?> pts</strong></div>
+                                        <div>Total Max Marks: <strong class="text-dark"><?php echo $total_max_marks; ?> marks</strong></div>
+                                        <div>MCQ Marks Earned: <strong class="text-dark"><?php echo $mcq_earned_marks; ?> / <?php echo $mcq_total_marks; ?> marks</strong></div>
                                     </div>
                                 </div>
 

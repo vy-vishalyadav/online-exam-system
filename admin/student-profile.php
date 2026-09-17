@@ -43,7 +43,8 @@ if (!$student) { header("Location: manage-students.php"); exit; }
 // Fetch exam results
 $stmt = mysqli_prepare($conn,
     "SELECT r.*, e.title AS exam_title, e.duration_minutes,
-            es.time_taken_seconds
+            es.time_taken_seconds,
+            (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
      FROM results r
      JOIN exams e ON r.exam_id = e.id
      LEFT JOIN exam_sessions es ON es.student_id = r.student_id AND es.exam_id = r.exam_id
@@ -146,8 +147,8 @@ $avg_score       = $published_count > 0 ? round(array_sum(array_column(array_val
             </div>
             <div class="col-6 col-md-3">
                 <div class="text-center p-3 bg-light rounded-3">
-                    <div class="fw-extrabold fs-3 text-dark"><?php echo $avg_score; ?> pts</div>
-                    <div class="text-muted small">Avg Score</div>
+                    <div class="fw-extrabold fs-3 text-dark"><?php echo $avg_score; ?> marks</div>
+                    <div class="text-muted small">Avg Marks</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
@@ -193,11 +194,15 @@ $avg_score       = $published_count > 0 ? round(array_sum(array_column(array_val
                                 <td class="ps-4 text-muted"><?php echo $i++; ?></td>
                                 <td class="fw-semibold text-dark"><?php echo htmlspecialchars($r['exam_title']); ?></td>
                                 <td>
+                                    <?php 
+                                    $out_of = (float)($r['exam_total_marks'] ?? 0);
+                                    $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
+                                    ?>
                                     <?php if ($pending): ?>
-                                        <span class="text-muted fst-italic">Draft: <?php echo $r['score']; ?> pts</span>
+                                        <span class="text-muted fst-italic">Draft: <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks</span>
                                     <?php else: ?>
                                         <span class="fw-bold text-primary">
-                                            <?php echo $r['score']; ?> pts
+                                            <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                         </span>
                                     <?php endif; ?>
                                 </td>

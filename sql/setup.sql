@@ -271,10 +271,10 @@ ON DUPLICATE KEY UPDATE `submitted` = VALUES(`submitted`), `time_taken_seconds` 
 
 -- 12. Sample Results (Published & Pending Review)
 INSERT INTO `results` (`id`, `student_id`, `exam_id`, `score`, `status`, `admin_feedback`, `attempted_at`, `evaluated_at`) VALUES
-    (1, 1, 1, 80,  'published', 'Great performance on General Knowledge.', '2026-09-15 10:08:00', '2026-09-15 10:08:00'),
-    (2, 2, 1, 60,  'published', 'Good effort, revise capital cities.',      '2026-09-15 10:14:00', '2026-09-15 10:14:00'),
-    (3, 3, 1, 100, 'published', 'Perfect score! Excellent work.',           '2026-09-15 10:20:20', '2026-09-15 10:20:20'),
-    (4, 3, 5, 60,  'pending',   NULL,                                        '2026-09-16 14:18:40', NULL)
+    (1, 1, 1, 4, 'published', 'Great performance on General Knowledge.', '2026-09-15 10:08:00', '2026-09-15 10:08:00'),
+    (2, 2, 1, 3, 'published', 'Good effort, revise capital cities.',      '2026-09-15 10:14:00', '2026-09-15 10:14:00'),
+    (3, 3, 1, 5, 'published', 'Perfect score! Excellent work.',           '2026-09-15 10:20:20', '2026-09-15 10:20:20'),
+    (4, 3, 5, 3, 'pending',   NULL,                                        '2026-09-16 14:18:40', NULL)
 ON DUPLICATE KEY UPDATE `score` = VALUES(`score`), `status` = VALUES(`status`), `admin_feedback` = VALUES(`admin_feedback`);
 
 -- 13. Sample Student Answers

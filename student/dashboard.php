@@ -130,7 +130,10 @@ $exams = mysqli_query($conn, $query);
                                         Your submission is being evaluated by your instructor.
                                     </div>
                                 <?php else: ?>
-                                    <?php $marks_obtained = ($total_marks > 0 && $last_score !== null) ? round($last_score * $total_marks / 100) : 0; ?>
+                                    <?php 
+                                    $marks_obtained = ($last_score !== null) ? (int)$last_score : 0; 
+                                    $score_pct = ($total_marks > 0) ? min(100, round(($marks_obtained / $total_marks) * 100)) : 0;
+                                    ?>
                                     <div class="d-flex justify-content-between align-items-center">
                                         <small class="text-muted fw-semibold">Final Score:</small>
                                         <span class="fw-bold text-primary fs-6">
@@ -139,7 +142,7 @@ $exams = mysqli_query($conn, $query);
                                     </div>
                                     <!-- Score bar -->
                                     <div class="progress mt-2 rounded-pill" style="height:6px;">
-                                        <div class="progress-bar bg-primary" style="width:<?php echo min(100, (int)($last_score ?? 0)); ?>%"></div>
+                                        <div class="progress-bar bg-primary" style="width:<?php echo $score_pct; ?>%"></div>
                                     </div>
                                     <div class="mt-2">
                                         <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small fw-bold">

@@ -20,11 +20,12 @@ $q_pending   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM results WHERE stat
 $pending_count = ($q_pending ? mysqli_fetch_assoc($q_pending)['c'] : 0);
 
 // Fetch latest 5 results for recent overview
-$recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.title AS exam_title
-                                      FROM results r
-                                      JOIN students s ON r.student_id = s.id
-                                      JOIN exams e ON r.exam_id = e.id
-                                      ORDER BY r.attempted_at DESC LIMIT 5");
+$recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.title AS exam_title,
+                                       (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
+                                       FROM results r
+                                       JOIN students s ON r.student_id = s.id
+                                       JOIN exams e ON r.exam_id = e.id
+                                       ORDER BY r.attempted_at DESC LIMIT 5");
 ?>
 
 <div class="mb-4">
@@ -103,10 +104,18 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
                                 <td class="ps-4 fw-semibold text-dark"><?php echo htmlspecialchars($r['student_name']); ?></td>
                                 <td class="text-dark"><?php echo htmlspecialchars($r['exam_title']); ?></td>
                                 <td>
+                                    <?php 
+                                    $out_of = (float)($r['exam_total_marks'] ?? 0);
+                                    $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
+                                    ?>
                                     <?php if ($is_pending): ?>
-                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Draft: <?php echo $r['score']; ?> pts</span>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+                                            Draft: <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                        </span>
                                     <?php else: ?>
-                                        <span class="fw-bold text-dark"><?php echo $r['score']; ?> pts</span>
+                                        <span class="fw-bold text-dark">
+                                            <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                        </span>
                                     <?php endif; ?>
                                 </td>
                                 <td>

@@ -98,11 +98,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                 }
             }
 
+            $earned_mcq_marks = 0;
+            $total_exam_marks = 0;
+
             if ($questions_res) {
                 while ($q = mysqli_fetch_assoc($questions_res)) {
                     $total_questions++;
                     $q_id   = $q['id'];
                     $q_type = $q['question_type'] ?? 'mcq';
+                    $q_marks = isset($q['marks']) && (float)$q['marks'] > 0 ? (float)$q['marks'] : 1.00;
+                    $total_exam_marks += $q_marks;
 
                     if ($q_type === 'descriptive') {
                         $desc_count++;
@@ -114,7 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                             'question_text' => $q['question_text'],
                             'user_ans'      => $desc_text,
                             'is_correct'    => null,
-                            'marks'         => 0
+                            'marks'         => 0,
+                            'question_marks'=> $q_marks
                         ];
                     } else {
                         $mcq_count++;
@@ -130,7 +136,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                             $shuffled_correct = $original_correct;
                         }
                         $is_correct = ($user_ans !== null && $user_ans === $shuffled_correct);
-                        if ($is_correct) $correct_count++;
+                        $earned_marks = $is_correct ? $q_marks : 0;
+                        if ($is_correct) {
+                            $correct_count++;
+                            $earned_mcq_marks += $q_marks;
+                        }
 
                         $recorded_answers[] = [
                             'question_id'   => $q_id,
@@ -143,7 +153,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                             'user_ans'      => $user_ans,
                             'correct_ans'   => $original_correct,
                             'is_correct'    => $is_correct ? 1 : 0,
-                            'marks'         => $is_correct ? 1 : 0
+                            'marks'         => $earned_marks,
+                            'question_marks'=> $q_marks
                         ];
                     }
                 }
@@ -159,15 +170,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                 $status = 'published';
             }
 
-            // Score = correct MCQs ÷ total MCQs × 100
-            // (descriptive questions are scored later by admin)
-            $score_percentage = ($mcq_count > 0) ? round(($correct_count / $mcq_count) * 100) : 0;
+            // Score is raw marks awarded (descriptive evaluated later by instructor)
+            $final_marks = round($earned_mcq_marks);
 
             // Save result
             $result_id = 0;
             $stmt = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
             if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "iiis", $student_id, $exam_id, $score_percentage, $status);
+                mysqli_stmt_bind_param($stmt, "iiis", $student_id, $exam_id, $final_marks, $status);
                 if (mysqli_stmt_execute($stmt)) {
                     $result_id = (int)mysqli_insert_id($conn);
                 }
@@ -221,11 +231,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     'has_descriptive' => $desc_count > 0,
                     'desc_count'      => $desc_count,
                     'total'           => $total_questions,
+                    'total_marks'     => $total_exam_marks,
                     'mcq_count'       => $mcq_count,
                     'correct'         => $correct_count,
                     'wrong'           => max(0, $mcq_count - $correct_count),
-                    'score'           => $score_percentage,
-                    'passed'          => $score_percentage >= 50,
+                    'score'           => $final_marks,
                     'items'           => $recorded_answers
                 ];
                 header("Location: result.php");
@@ -345,7 +355,8 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
     $vr_stmt = null;
     if ($view_result_id > 0) {
         $vr_stmt = mysqli_prepare($conn,
-            "SELECT r.*, e.title AS exam_title
+            "SELECT r.*, e.title AS exam_title,
+                    (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
              FROM results r
              JOIN exams e ON r.exam_id = e.id
              WHERE r.student_id = ? AND r.id = ?
@@ -355,7 +366,8 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
         }
     } else {
         $vr_stmt = mysqli_prepare($conn,
-            "SELECT r.*, e.title AS exam_title
+            "SELECT r.*, e.title AS exam_title,
+                    (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
              FROM results r
              JOIN exams e ON r.exam_id = e.id
              WHERE r.student_id = ? AND r.exam_id = ?
@@ -485,11 +497,11 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
                 'has_descriptive' => $view_desc > 0,
                 'desc_count'      => $view_desc,
                 'total'           => $view_total,
+                'total_marks'     => (float)($vr['exam_total_marks'] ?? 0),
                 'mcq_count'       => $mcq_count,
                 'correct'         => $view_correct,
                 'wrong'           => $wrong_count,
                 'score'           => (int)$vr['score'],
-                'passed'          => ((int)$vr['score']) >= 50,
                 'items'           => $view_items,
                 'is_historical'   => true,
             ];
@@ -509,7 +521,8 @@ if (!empty($_SESSION['flash_already_submitted'])) {
 // Fetch all past results for this student with time taken and question count
 $stmt = mysqli_prepare($conn, "SELECT r.*, e.title AS exam_title,
                                 es.time_taken_seconds,
-                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = r.exam_id) AS q_count
+                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = r.exam_id) AS q_count,
+                                (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = r.exam_id) AS exam_total_marks
                                 FROM results r
                                 JOIN exams e ON r.exam_id = e.id
                                 LEFT JOIN exam_sessions es
@@ -626,9 +639,14 @@ mysqli_stmt_close($stmt);
                 <div class="row g-4 text-center justify-content-center mb-4">
                     <div class="col-6 col-md-3">
                         <div class="bg-primary-subtle p-3 rounded-4 border border-primary-subtle">
-                            <small class="text-muted fw-semibold">Score Percentage</small>
+                            <small class="text-muted fw-semibold">Marks Awarded</small>
                             <h2 class="fw-extrabold text-primary mb-0">
-                                <?php echo $submission_review['score']; ?>%
+                                <?php echo $submission_review['score']; ?>
+                                <?php if (!empty($submission_review['total_marks']) && $submission_review['total_marks'] > 0): ?>
+                                    <small class="fs-6 text-muted">/ <?php echo rtrim(rtrim(number_format($submission_review['total_marks'], 2), '0'), '.'); ?> marks</small>
+                                <?php else: ?>
+                                    <small class="fs-6 text-muted">marks</small>
+                                <?php endif; ?>
                             </h2>
                         </div>
                     </div>
@@ -713,7 +731,7 @@ mysqli_stmt_close($stmt);
                                 <?php if ($d_marks !== null && $d_marks !== ''): ?>
                                     <div class="d-flex align-items-center gap-2">
                                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
-                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo htmlspecialchars((string)$d_marks); ?> pts
+                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo htmlspecialchars((string)$d_marks); ?> marks
                                         </span>
                                     </div>
                                 <?php endif; ?>
@@ -842,15 +860,18 @@ mysqli_stmt_close($stmt);
                             <td class="ps-4 fw-bold"><?php echo $i++; ?></td>
                             <td><strong class="text-dark"><?php echo htmlspecialchars($r['exam_title']); ?></strong></td>
                             <td>
+                                <?php 
+                                $out_of = (float)($r['exam_total_marks'] ?? 0);
+                                $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
+                                ?>
                                 <?php if ($is_pending): ?>
-                                    <span class="text-muted fst-italic"><i class="bi bi-hourglass me-1"></i>Pending</span>
-                                <?php else: ?>
-                                    <span class="fw-extrabold fs-6 <?php echo $r['score'] >= 50 ? 'text-success' : 'text-danger'; ?>">
-                                        <?php echo $r['score']; ?>%
+                                    <span class="badge bg-warning text-dark border rounded-pill px-3 py-1 fw-bold">
+                                        <i class="bi bi-hourglass-split me-1"></i> Pending Review
                                     </span>
-                                    <?php if ($r_q_count > 0): ?>
-                                        <small class="text-muted d-block"><?php echo $r_marks; ?> / <?php echo $r_q_count; ?> pts</small>
-                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="fw-bold fs-6 text-primary">
+                                        <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                    </span>
                                 <?php endif; ?>
                             </td>
                             <td class="text-muted small">
