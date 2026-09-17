@@ -564,10 +564,22 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                     • <span id="answeredCountDisplay">0</span>/<?php echo $total_questions; ?> Answered (<span id="progressPercentDisplay">0%</span>)
                 </span>
             </div>
-            <div class="d-flex align-items-center gap-3 small text-muted">
-                <span><span class="palette-legend-dot dot-answered"></span> Answered</span>
-                <span><span class="palette-legend-dot dot-unanswered"></span> Unanswered</span>
-                <span><span class="palette-legend-dot dot-current"></span> Current</span>
+            
+            <div class="d-flex align-items-center gap-3">
+                <!-- Font Size Readability Controls -->
+                <div class="d-flex align-items-center gap-1 bg-light border rounded-pill px-2 py-1">
+                    <small class="text-muted fw-semibold me-1"><i class="bi bi-type"></i> Font:</small>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 rounded-circle" onclick="changeFontSize(-1)" title="Decrease font size">A-</button>
+                    <span class="small fw-bold px-1 font-size-label text-dark">Default</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 rounded-circle" onclick="changeFontSize(1)" title="Increase font size">A+</button>
+                    <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 ms-1 text-muted" onclick="changeFontSize(0)" title="Reset font size"><i class="bi bi-arrow-counterclockwise"></i></button>
+                </div>
+
+                <div class="d-none d-md-flex align-items-center gap-3 small text-muted">
+                    <span><span class="palette-legend-dot dot-answered"></span> Answered</span>
+                    <span><span class="palette-legend-dot dot-unanswered"></span> Unanswered</span>
+                    <span><span class="palette-legend-dot dot-current"></span> Current</span>
+                </div>
             </div>
         </div>
         
@@ -606,7 +618,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                  data-qid="<?php echo $q_id; ?>"
                  data-type="<?php echo $is_desc ? 'descriptive' : 'mcq'; ?>"
                  data-index="<?php echo $index; ?>">
-                <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                     <span class="badge bg-primary rounded-pill px-3 py-2 fs-6">Q<?php echo $q_num; ?> of <?php echo $total_questions; ?></span>
                     <div class="d-flex align-items-center gap-2">
                         <?php if ($is_desc): ?>
@@ -620,17 +632,40 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                     </div>
                 </div>
 
-                <h5 class="fw-bold text-dark mb-4 lh-base"><?php echo htmlspecialchars($q['question_text']); ?></h5>
+                <h5 class="fw-bold text-dark mb-4 lh-base question-text"><?php echo htmlspecialchars($q['question_text']); ?></h5>
 
                 <?php if ($is_desc): ?>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold text-muted">
-                            <i class="bi bi-pencil text-primary me-1"></i> Write your detailed response:
-                        </label>
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <label class="form-label fw-semibold text-muted mb-0">
+                                <i class="bi bi-pencil text-primary me-1"></i> Write your detailed response:
+                            </label>
+                            <div class="d-flex align-items-center gap-1">
+                                <span class="small text-muted me-1 d-none d-sm-inline"><i class="bi bi-arrows-vertical"></i> Height:</span>
+                                <div class="btn-group btn-group-sm" role="group" aria-label="Input box height">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-0.5"
+                                            onclick="adjustInputHeight(<?php echo $q_id; ?>, -80)" title="Decrease box height">
+                                        <i class="bi bi-dash"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-0.5"
+                                            onclick="resetInputHeight(<?php echo $q_id; ?>)" title="Reset to standard height">
+                                        Default
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-0.5"
+                                            onclick="adjustInputHeight(<?php echo $q_id; ?>, 120)" title="Increase box height">
+                                        <i class="bi bi-plus"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-primary btn-sm px-2 py-0.5 fw-semibold"
+                                            onclick="toggleMaxInputHeight(<?php echo $q_id; ?>)" id="btnMax_<?php echo $q_id; ?>" title="Large view for desktop">
+                                        <i class="bi bi-arrows-angle-expand me-1"></i> Large View
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         <textarea name="descriptive_answer[<?php echo $q_id; ?>]"
                                   id="desc_<?php echo $q_id; ?>"
                                   class="form-control descriptive-input p-3 shadow-sm rounded-3"
-                                  rows="6"
+                                  rows="8"
                                   placeholder="Type your answer here manually..."
                                   maxlength="5000"
                                   data-qid="<?php echo $q_id; ?>"
@@ -641,7 +676,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                                   spellcheck="false"
                                   oninput="scheduleAutoSave(<?php echo $q_id; ?>, this.value)"><?php echo htmlspecialchars($draft); ?></textarea>
                         <div class="d-flex justify-content-between align-items-center mt-1">
-                            <span class="small text-muted"><i class="bi bi-shield-lock me-1 text-danger"></i> Copy &amp; paste strictly disabled</span>
+                            <span class="small text-muted"><i class="bi bi-shield-lock me-1 text-danger"></i> Copy &amp; paste strictly disabled • Drag bottom-right corner to expand vertically</span>
                             <span class="small text-muted"><span id="chars_<?php echo $q_id; ?>"><?php echo strlen($draft); ?></span>/5000</span>
                         </div>
                     </div>
@@ -670,27 +705,17 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                                 onclick="prevQuestion()" <?php echo $index === 0 ? 'disabled' : ''; ?>>
                             <i class="bi bi-arrow-left me-1"></i> Previous
                         </button>
-                        <?php if ($is_desc): ?>
-                            <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold"
-                                    onclick="clearAnswer(<?php echo $q_id; ?>, 'desc')" title="Erase written response">
-                                <i class="bi bi-eraser me-1"></i> Clear Response
-                            </button>
-                        <?php else: ?>
-                            <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold"
-                                    onclick="clearAnswer(<?php echo $q_id; ?>, 'mcq')" title="Deselect chosen option">
-                                <i class="bi bi-eraser me-1"></i> Clear Choice
-                            </button>
-                        <?php endif; ?>
+                        <button type="button" class="btn btn-primary px-4 py-2 fw-bold"
+                                onclick="nextQuestion()" <?php echo $index === $total_questions - 1 ? 'disabled' : ''; ?>>
+                            Next <i class="bi bi-arrow-right ms-1"></i>
+                        </button>
                     </div>
 
-                    <div class="d-flex align-items-center gap-2">
-                        <?php if ($index < $total_questions - 1): ?>
-                            <button type="button" class="btn btn-primary px-4 py-2 fw-bold" onclick="nextQuestion()">
-                                Next <i class="bi bi-arrow-right ms-1"></i>
-                            </button>
-                        <?php else: ?>
-                            <button type="button" class="btn btn-success px-4 py-2 fw-bold shadow-sm" onclick="openSubmitModal()">
-                                <i class="bi bi-send-check-fill me-1"></i> Review &amp; Submit
+                    <div>
+                        <?php if (!$is_desc): ?>
+                            <button type="button" class="btn btn-outline-secondary btn-sm px-3 py-2 fw-semibold"
+                                    onclick="clearAnswer(<?php echo $q_id; ?>, 'mcq')" title="Deselect chosen option">
+                                <i class="bi bi-eraser me-1"></i> Clear Choice
                             </button>
                         <?php endif; ?>
                     </div>
@@ -754,6 +779,20 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
 
         // Initialize question palette and status counters
         updatePaletteStatus();
+
+        // Restore preferred font size & textarea height
+        try {
+            const savedFont = localStorage.getItem('exam_font_level');
+            if (savedFont !== null) {
+                applyFontSize(parseInt(savedFont));
+            }
+            const savedH = localStorage.getItem('exam_desc_height');
+            if (savedH) {
+                document.querySelectorAll('textarea.descriptive-input').forEach(ta => {
+                    ta.style.height = `${savedH}px`;
+                });
+            }
+        } catch(e) {}
 
         // ── Wire up Exit confirmation modal (keeps fullscreen active, 0 violations) ──
         const btnExit = document.getElementById('btnOpenExitModal');
@@ -836,6 +875,73 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         }
     });
 
+    // ── Font Size & Readability Scale ─────────────────────────────────────────
+    const FONT_LEVELS = [
+        { q: '1.05rem', body: '0.92rem', label: 'Compact' },
+        { q: '1.2rem',  body: '1.05rem', label: 'Default' },
+        { q: '1.4rem',  body: '1.18rem', label: 'Large' },
+        { q: '1.65rem', body: '1.35rem', label: 'X-Large' },
+        { q: '1.9rem',  body: '1.5rem',  label: 'Huge' }
+    ];
+    let currentFontLevel = 1;
+
+    function applyFontSize(level) {
+        currentFontLevel = Math.max(0, Math.min(FONT_LEVELS.length - 1, level));
+        const cfg = FONT_LEVELS[currentFontLevel];
+        document.documentElement.style.setProperty('--exam-q-font-size', cfg.q);
+        document.documentElement.style.setProperty('--exam-body-font-size', cfg.body);
+
+        document.querySelectorAll('.font-size-label').forEach(el => {
+            el.textContent = cfg.label;
+        });
+
+        try { localStorage.setItem('exam_font_level', currentFontLevel); } catch(e) {}
+    }
+
+    function changeFontSize(delta) {
+        if (delta === 0) {
+            applyFontSize(1); // reset to default
+        } else {
+            applyFontSize(currentFontLevel + delta);
+        }
+    }
+
+    // ── Descriptive Textarea Height Adjustments (Desktop Focused) ────────────
+    function adjustInputHeight(qId, delta) {
+        const ta = document.getElementById(`desc_${qId}`);
+        if (!ta) return;
+        const currentH = ta.offsetHeight || 280;
+        const newH = Math.max(180, Math.min(900, currentH + delta));
+        ta.style.height = `${newH}px`;
+        try { localStorage.setItem('exam_desc_height', newH); } catch(e) {}
+    }
+
+    function resetInputHeight(qId) {
+        const ta = document.getElementById(`desc_${qId}`);
+        if (!ta) return;
+        const defH = window.innerWidth >= 992 ? '300px' : '240px';
+        ta.style.height = defH;
+        try { localStorage.removeItem('exam_desc_height'); } catch(e) {}
+        const btn = document.getElementById(`btnMax_${qId}`);
+        if (btn) btn.innerHTML = '<i class="bi bi-arrows-angle-expand me-1"></i> Large View';
+    }
+
+    function toggleMaxInputHeight(qId) {
+        const ta = document.getElementById(`desc_${qId}`);
+        const btn = document.getElementById(`btnMax_${qId}`);
+        if (!ta) return;
+        if (ta.offsetHeight >= 460) {
+            const defH = window.innerWidth >= 992 ? '300px' : '240px';
+            ta.style.height = defH;
+            if (btn) btn.innerHTML = '<i class="bi bi-arrows-angle-expand me-1"></i> Large View';
+            try { localStorage.removeItem('exam_desc_height'); } catch(e) {}
+        } else {
+            ta.style.height = '520px';
+            if (btn) btn.innerHTML = '<i class="bi bi-arrows-angle-contract me-1"></i> Compact View';
+            try { localStorage.setItem('exam_desc_height', 520); } catch(e) {}
+        }
+    }
+
     // ── CBT Single Question Navigation & Palette State ────────────────────────
     let currentQuestionIndex = 0;
 
@@ -907,6 +1013,16 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         const targetCard = document.getElementById(`questionCard_${currentQuestionIndex}`);
         if (targetCard) {
             targetCard.classList.remove('d-none');
+
+            // Apply preserved desktop textarea height if available
+            try {
+                const savedH = localStorage.getItem('exam_desc_height');
+                if (savedH) {
+                    const descTa = targetCard.querySelector('textarea.descriptive-input');
+                    if (descTa) descTa.style.height = `${savedH}px`;
+                }
+            } catch(e) {}
+
             // Re-run math typesetting if KaTeX is present
             if (typeof renderMathInElement === 'function') {
                 try {
@@ -936,8 +1052,6 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     function nextQuestion() {
         if (currentQuestionIndex < TOTAL_Q - 1) {
             goToQuestion(currentQuestionIndex + 1);
-        } else {
-            openSubmitModal();
         }
     }
 

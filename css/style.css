@@ -211,11 +211,38 @@ body {
     user-select: none;
 }
 
+:root {
+    --exam-q-font-size: 1.2rem;
+    --exam-body-font-size: 1.05rem;
+}
+
+.question-card .question-text {
+    font-size: var(--exam-q-font-size) !important;
+    line-height: 1.6 !important;
+    transition: font-size 0.15s ease;
+}
+
+.question-card .option-wrapper {
+    font-size: var(--exam-body-font-size) !important;
+    transition: font-size 0.15s ease;
+}
+
 .descriptive-input {
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;
     user-select: text;
+    font-size: var(--exam-body-font-size) !important;
+    line-height: 1.65 !important;
+    resize: vertical !important;
+    min-height: 240px;
+    transition: font-size 0.15s ease;
+}
+
+@media (min-width: 992px) {
+    .descriptive-input {
+        min-height: 300px;
+    }
 }
 
 .option-wrapper {
