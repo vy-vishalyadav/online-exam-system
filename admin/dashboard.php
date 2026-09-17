@@ -21,7 +21,8 @@ $pending_count = ($q_pending ? mysqli_fetch_assoc($q_pending)['c'] : 0);
 
 // Fetch latest 5 results for recent overview
 $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.title AS exam_title,
-                                       (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
+                                       COALESCE(NULLIF((SELECT SUM(COALESCE(q.marks, 1)) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id), 0),
+                                                (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id)) AS exam_total_marks
                                        FROM results r
                                        JOIN students s ON r.student_id = s.id
                                        JOIN exams e ON r.exam_id = e.id
