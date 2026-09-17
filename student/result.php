@@ -31,8 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
 
         if (!$expected_token || !$submitted_token || !hash_equals($expected_token, $submitted_token)) {
             $_SESSION['flash_already_submitted'] = "Your exam was already submitted. Refreshing the page after submission has no effect.";
-            header("Location: result.php");
-            exit;
+            safe_redirect("result.php");
         }
 
         // Consume token
@@ -56,8 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             mysqli_stmt_close($ss);
             if ($ss_row && $ss_row['submitted']) {
                 $_SESSION['flash_already_submitted'] = "Your exam was already submitted.";
-                header("Location: result.php");
-                exit;
+                safe_redirect("result.php");
             }
         }
 
@@ -265,8 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     'score'           => $final_marks,
                     'items'           => $recorded_answers
                 ];
-                header("Location: result.php");
-                exit;
+                safe_redirect("result.php");
             }
         } else {
             $error_msg = "Invalid exam submission.";
@@ -413,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                 }
             }
         }
-        header("Location: result.php"); exit;
+        safe_redirect("result.php");
     }
 }
 

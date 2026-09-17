@@ -58,8 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_close($stmt);
                         $_SESSION['flash_success'] = "Descriptive Question added successfully! (Exams with descriptive questions will hold results for review).";
                         $_SESSION['flash_exam_id'] = $exam_id;
-                        header("Location: add-question.php?exam_id=$exam_id");
-                        exit;
+                        safe_redirect("add-question.php?exam_id=$exam_id");
                     } else {
                         $error = "Error adding question: " . mysqli_error($conn);
                         mysqli_stmt_close($stmt);
@@ -91,8 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             mysqli_stmt_close($stmt);
                             $_SESSION['flash_success'] = "MCQ Question added successfully!";
                             $_SESSION['flash_exam_id'] = $exam_id;
-                            header("Location: add-question.php?exam_id=$exam_id");
-                            exit;
+                            safe_redirect("add-question.php?exam_id=$exam_id");
                         } else {
                             $error = "Error adding question: " . mysqli_error($conn);
                             mysqli_stmt_close($stmt);

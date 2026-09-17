@@ -32,8 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 mysqli_stmt_close($stmt);
             }
         }
-        header("Location: manage-exam.php");
-        exit;
+        safe_redirect("manage-exam.php");
     }
 }
 
@@ -81,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
                         }
                     }
                     $_SESSION['flash_success'] = "Exam '" . htmlspecialchars($title) . "' added successfully!";
-                    header("Location: manage-exam.php"); exit;
+                    safe_redirect("manage-exam.php");
                 } else {
                     $error = "Error adding exam: " . mysqli_error($conn);
                     mysqli_stmt_close($stmt);
@@ -141,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
                         }
                     }
                     $_SESSION['flash_success'] = "Exam updated successfully!";
-                    header("Location: manage-exam.php"); exit;
+                    safe_redirect("manage-exam.php");
                 } else {
                     $error = "Error updating exam: " . mysqli_error($conn);
                     mysqli_stmt_close($stmt);

@@ -34,8 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
         $redirect = "manage-questions.php" . ($exam_filter ? "?exam_id=$exam_filter" : "");
-        header("Location: $redirect");
-        exit;
+        safe_redirect($redirect);
     }
 }
 
@@ -73,8 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_question'])) {
                         mysqli_stmt_close($stmt);
                         $_SESSION['flash_success'] = "Descriptive question updated successfully!";
                         $selected_exam_id_redir = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
-                        header("Location: manage-questions.php" . ($selected_exam_id_redir ? "?exam_id=$selected_exam_id_redir" : ""));
-                        exit;
+                        safe_redirect("manage-questions.php" . ($selected_exam_id_redir ? "?exam_id=$selected_exam_id_redir" : ""));
                     } else {
                         $error = "Error updating question: " . mysqli_error($conn);
                         mysqli_stmt_close($stmt);
@@ -104,8 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_question'])) {
                             mysqli_stmt_close($stmt);
                             $_SESSION['flash_success'] = "Question updated successfully!";
                             $selected_exam_id_redir = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
-                            header("Location: manage-questions.php" . ($selected_exam_id_redir ? "?exam_id=$selected_exam_id_redir" : ""));
-                            exit;
+                            safe_redirect("manage-questions.php" . ($selected_exam_id_redir ? "?exam_id=$selected_exam_id_redir" : ""));
                         } else {
                             $error = "Error updating question: " . mysqli_error($conn);
                             mysqli_stmt_close($stmt);

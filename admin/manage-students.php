@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             mysqli_stmt_execute($stmt) ? $_SESSION['flash_success'] = "Student deleted." : $_SESSION['flash_error'] = mysqli_error($conn);
             mysqli_stmt_close($stmt);
         }
-        header("Location: manage-students.php"); exit;
+        safe_redirect("manage-students.php");
     }
 }
 
@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
         mysqli_stmt_execute($stmt);
         mysqli_stmt_close($stmt);
         $_SESSION['flash_success'] = "Password reset to 'student'.";
-        header("Location: manage-students.php"); exit;
+        safe_redirect("manage-students.php");
     }
 }
 
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
                 mysqli_stmt_bind_param($stmt, "siss", $name, $class_id, $login_id, $hashed_pw);
                 if (mysqli_stmt_execute($stmt)) {
                     $_SESSION['flash_success'] = "Student <strong>" . htmlspecialchars($name, ENT_QUOTES) . "</strong> registered! &nbsp;|&nbsp; Login ID: <strong class='text-primary'>{$login_id}</strong> &nbsp;|&nbsp; Password: <strong>student</strong>";
-                    header("Location: manage-students.php"); exit;
+                    safe_redirect("manage-students.php");
                 } else {
                     $error = mysqli_errno($conn) === 1062 ? "ID conflict, please try again." : "Error: " . mysqli_error($conn);
                 }
@@ -138,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
                 mysqli_stmt_bind_param($stmt, "sisi", $name, $class_id, $email, $id);
                 if (mysqli_stmt_execute($stmt)) {
                     $_SESSION['flash_success'] = "Student updated.";
-                    header("Location: manage-students.php"); exit;
+                    safe_redirect("manage-students.php");
                 } else { $error = "Update failed: " . mysqli_error($conn); }
                 mysqli_stmt_close($stmt);
             }

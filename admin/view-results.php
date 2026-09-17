@@ -32,8 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 mysqli_stmt_close($stmt);
             }
         }
-        header("Location: view-results.php");
-        exit;
+        safe_redirect("view-results.php");
     }
 }
 
@@ -88,8 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if (mysqli_stmt_execute($stmt)) {
                 mysqli_stmt_close($stmt);
                 $_SESSION['flash_success'] = "Result #$result_id evaluated and published successfully to the student!";
-                header("Location: view-results.php");
-                exit;
+                safe_redirect("view-results.php");
             } else {
                 $error = "Failed to update result: " . mysqli_error($conn);
                 mysqli_stmt_close($stmt);

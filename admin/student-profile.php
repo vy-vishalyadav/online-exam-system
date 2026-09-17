@@ -6,7 +6,7 @@ if (!isset($_SESSION['admin_id'])) { header("Location: ../index.php"); exit; }
 if (empty($_SESSION['csrf_token'])) { $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); }
 
 $student_id = (int)($_GET['id'] ?? 0);
-if (!$student_id) { header("Location: manage-students.php"); exit; }
+if (!$student_id) { safe_redirect("manage-students.php"); }
 
 $error = $success = "";
 
@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
         mysqli_stmt_execute($stmt);
         mysqli_stmt_close($stmt);
         $_SESSION['flash_success'] = "Password reset to 'student'.";
-        header("Location: student-profile.php?id=$student_id"); exit;
+        safe_redirect("student-profile.php?id=$student_id");
     }
 }
 
@@ -38,7 +38,7 @@ mysqli_stmt_bind_param($stmt, "i", $student_id);
 mysqli_stmt_execute($stmt);
 $student = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
 mysqli_stmt_close($stmt);
-if (!$student) { header("Location: manage-students.php"); exit; }
+if (!$student) { safe_redirect("manage-students.php"); }
 
 // Fetch exam results
 $stmt = mysqli_prepare($conn,

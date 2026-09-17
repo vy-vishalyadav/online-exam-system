@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             mysqli_stmt_execute($stmt) ? $_SESSION['flash_success'] = "Class deleted." : $_SESSION['flash_error'] = "Delete failed.";
             mysqli_stmt_close($stmt);
         }
-        header("Location: manage-classes.php"); exit;
+        safe_redirect("manage-classes.php");
     }
 }
 
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_class'])) {
             mysqli_stmt_bind_param($stmt, "ssi", $name, $desc, $sort);
             if (mysqli_stmt_execute($stmt)) {
                 $_SESSION['flash_success'] = "Class '$name' added.";
-                header("Location: manage-classes.php"); exit;
+                safe_redirect("manage-classes.php");
             } else {
                 $error = mysqli_errno($conn) === 1062 ? "Class '$name' already exists." : "Error: " . mysqli_error($conn);
             }
@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_class'])) {
             mysqli_stmt_bind_param($stmt, "ssii", $name, $desc, $sort, $cid);
             if (mysqli_stmt_execute($stmt)) {
                 $_SESSION['flash_success'] = "Class updated.";
-                header("Location: manage-classes.php"); exit;
+                safe_redirect("manage-classes.php");
             } else {
                 $error = mysqli_errno($conn) === 1062 ? "Class '$name' already exists." : "Update failed: " . mysqli_error($conn);
             }
@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'promo
         } else {
             $_SESSION['flash_error'] = "Please select two different classes.";
         }
-        header("Location: manage-classes.php"); exit;
+        safe_redirect("manage-classes.php");
     }
 }
 
@@ -115,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
         $done = mysqli_stmt_affected_rows($stmt);
         mysqli_stmt_close($stmt);
         $_SESSION['flash_success'] = "Reset passwords for $done student(s) to 'student'.";
-        header("Location: manage-classes.php"); exit;
+        safe_redirect("manage-classes.php");
     }
 }
 
@@ -281,7 +281,7 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
                     <input type="hidden" name="class_id" value="<?php echo $c['id']; ?>">
                     <div class="modal-header bg-light">
                         <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Class</h5>
-                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body p-4">
                         <div class="mb-3">
@@ -316,7 +316,10 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
             <form method="POST">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <input type="hidden" name="add_class" value="1">
-            <div class="modal-header bg-primary text-white"><h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Add New Class</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Add New Class</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
             <div class="modal-body p-4">
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Class Name</label>
@@ -334,8 +337,8 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
                 </div>
             </div>
             <div class="modal-footer bg-light">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button class="btn btn-primary fw-bold"><i class="bi bi-plus-circle me-1"></i>Add Class</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary fw-bold"><i class="bi bi-plus-circle me-1"></i>Add Class</button>
             </div>
         </form>
     </div></div>

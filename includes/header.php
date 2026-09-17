@@ -1,8 +1,6 @@
 <?php
-// Start output buffering to allow safe redirects anytime
-if (!ob_get_level()) {
-    ob_start();
-}
+// Start output buffering with unlimited buffer to allow safe redirects anytime
+ob_start();
 
 // 1. Secure Session Cookie Configuration
 if (session_status() === PHP_SESSION_NONE) {
@@ -20,7 +18,18 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// 2. Anti-Cache Headers (Prevent browser from caching sensitive exams/dashboards in history)
+// 2. Safe Redirect Helper (cleans output buffer so 302 redirect never fails or sends partial HTML)
+if (!function_exists('safe_redirect')) {
+    function safe_redirect(string $url): void {
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+        header("Location: " . $url);
+        exit;
+    }
+}
+
+// 3. Anti-Cache Headers (Prevent browser from caching sensitive exams/dashboards in history)
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 header("Expires: 0");

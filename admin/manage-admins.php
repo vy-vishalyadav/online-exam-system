@@ -10,8 +10,7 @@ if (!isset($_SESSION['admin_id'])) {
 $is_super_admin = !empty($_SESSION['is_super_admin']) || ((int)$_SESSION['admin_id'] === 1 || strtolower($_SESSION['admin_username'] ?? '') === 'admin');
 if (!$is_super_admin) {
     $_SESSION['flash_error'] = "Access denied. Only the Super Administrator can manage administrator accounts.";
-    header("Location: dashboard.php");
-    exit;
+    safe_redirect("dashboard.php");
 }
 
 // CSRF token generation
@@ -60,8 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     if (mysqli_stmt_execute($stmt)) {
                         mysqli_stmt_close($stmt);
                         $_SESSION['flash_success'] = "Admin account '" . htmlspecialchars($username) . "' created successfully!";
-                        header("Location: manage-admins.php");
-                        exit;
+                        safe_redirect("manage-admins.php");
                     } else {
                         $error = "Error adding admin: " . mysqli_error($conn);
                         mysqli_stmt_close($stmt);
@@ -97,8 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 if (mysqli_stmt_execute($stmt)) {
                     mysqli_stmt_close($stmt);
                     $_SESSION['flash_success'] = "Password updated successfully!";
-                    header("Location: manage-admins.php");
-                    exit;
+                    safe_redirect("manage-admins.php");
                 } else {
                     $error = "Error updating password: " . mysqli_error($conn);
                     mysqli_stmt_close($stmt);
@@ -137,8 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     if (mysqli_stmt_execute($stmt)) {
                         mysqli_stmt_close($stmt);
                         $_SESSION['flash_success'] = "Admin account removed successfully!";
-                        header("Location: manage-admins.php");
-                        exit;
+                        safe_redirect("manage-admins.php");
                     } else {
                         $error = "Error deleting admin: " . mysqli_error($conn);
                         mysqli_stmt_close($stmt);
