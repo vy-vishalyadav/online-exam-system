@@ -73,6 +73,7 @@ if ($is_student_area && !isset($_SESSION['student_id'])) {
 
 $is_admin = isset($_SESSION['admin_id']);
 $is_student = isset($_SESSION['student_id']);
+$is_super_admin = $is_admin && (!empty($_SESSION['is_super_admin']) || (int)$_SESSION['admin_id'] === 1 || strtolower($_SESSION['admin_username'] ?? '') === 'admin');
 
 $css_path = ($is_student_area || $is_admin_area) ? '../css/style.css' : 'css/style.css';
 $css_ver = file_exists(dirname(__DIR__) . '/css/style.css') ? filemtime(dirname(__DIR__) . '/css/style.css') : time();
@@ -143,11 +144,6 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                                 <i class="bi bi-shield-exclamation me-1"></i> Violations
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo ($current_page === 'manage-admins.php') ? 'active' : ''; ?>" href="manage-admins.php">
-                                <i class="bi bi-shield-lock me-1"></i> Admins
-                            </a>
-                        </li>
                     <?php elseif ($is_student): ?>
 
                         <li class="nav-item">
@@ -166,18 +162,25 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                 <div class="d-flex align-items-center gap-3">
                     <?php if ($is_admin): ?>
                         <div class="dropdown">
-                            <button class="btn user-badge dropdown-toggle no-caret d-flex align-items-center gap-1" id="adminUserDropdown" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="bi bi-shield-lock-fill text-warning me-1"></i>
-                                <span>Admin: <strong><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'admin'); ?></strong></span>
-                                <i class="bi bi-chevron-down small ms-1 opacity-75"></i>
+                            <button class="btn btn-sm btn-light border rounded-pill px-3 d-flex align-items-center gap-2 fw-semibold dropdown-toggle no-caret" id="adminUserDropdown" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-shield-lock-fill text-warning"></i>
+                                <span><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'admin'); ?></span>
+                                <i class="bi bi-chevron-down small opacity-75"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3 mt-1" aria-labelledby="adminUserDropdown">
+                                <?php if ($is_super_admin): ?>
+                                    <li>
+                                        <a class="dropdown-item <?php echo ($current_page === 'manage-admins.php') ? 'active' : ''; ?>" href="manage-admins.php">
+                                            <i class="bi bi-people-fill me-2 text-primary"></i> Manage Admins
+                                        </a>
+                                    </li>
+                                <?php endif; ?>
                                 <li>
-                                    <a class="dropdown-item <?php echo ($current_page === 'manage-admins.php') ? 'active' : ''; ?>" href="manage-admins.php">
-                                        <i class="bi bi-people-fill me-2 text-primary"></i> Manage Admins
+                                    <a class="dropdown-item <?php echo ($current_page === 'change-password.php') ? 'active' : ''; ?>" href="change-password.php">
+                                        <i class="bi bi-key me-2 text-primary"></i> Change Password
                                     </a>
                                 </li>
-                                <li><hr class="dropdown-divider"></li>
+                                <li><hr class="dropdown-divider my-1"></li>
                                 <li>
                                     <a class="dropdown-item text-danger fw-semibold" href="<?php echo $logout_url; ?>">
                                         <i class="bi bi-box-arrow-right me-2"></i> Logout
@@ -185,9 +188,6 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                                 </li>
                             </ul>
                         </div>
-                        <a href="<?php echo $logout_url; ?>" class="btn btn-logout btn-sm rounded-pill px-3 fw-bold d-none d-md-inline-block">
-                            <i class="bi bi-box-arrow-right me-1"></i> Logout
-                        </a>
                     <?php elseif ($is_student): ?>
                         <!-- Student profile dropdown -->
                         <div class="dropdown">

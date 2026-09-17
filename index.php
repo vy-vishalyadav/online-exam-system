@@ -160,6 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                         session_regenerate_id(true);
                         $_SESSION['admin_id']       = (int)$row['id'];
                         $_SESSION['admin_username'] = $row['username'];
+                        $_SESSION['is_super_admin'] = ((int)$row['id'] === 1 || strtolower($row['username']) === 'admin');
                         $_SESSION['last_activity']  = time();
                         header("Location: admin/dashboard.php");
                         exit;

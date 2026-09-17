@@ -7,6 +7,13 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+$is_super_admin = !empty($_SESSION['is_super_admin']) || ((int)$_SESSION['admin_id'] === 1 || strtolower($_SESSION['admin_username'] ?? '') === 'admin');
+if (!$is_super_admin) {
+    $_SESSION['flash_error'] = "Access denied. Only the Super Administrator can manage administrator accounts.";
+    header("Location: dashboard.php");
+    exit;
+}
+
 // CSRF token generation
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
