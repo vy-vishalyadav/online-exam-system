@@ -57,15 +57,16 @@ if ($stmt) {
     mysqli_stmt_close($stmt);
 }
 
-// Summary: top offenders
+// Summary: top recent offenders
 $summary_sql = "SELECT v.student_id, s.name, s.email, e.title AS exam_title, v.exam_id,
                        COUNT(*) AS total,
-                       SUM(v.violation_type IN ('tab_switch','fullscreen_exit','exit_exam')) AS serious
+                       SUM(v.violation_type IN ('tab_switch','fullscreen_exit','exit_exam')) AS serious,
+                       MAX(v.occurred_at) AS latest_violation
                 FROM exam_violations v
                 JOIN students s ON v.student_id=s.id
                 JOIN exams e ON v.exam_id=e.id
                 GROUP BY v.student_id, v.exam_id
-                ORDER BY serious DESC, total DESC LIMIT 20";
+                ORDER BY latest_violation DESC, serious DESC, total DESC LIMIT 100";
 $summary_res  = mysqli_query($conn, $summary_sql);
 $summaries    = [];
 if ($summary_res) {
@@ -90,9 +91,13 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
 
 <?php if (!empty($summaries)): ?>
 <!-- Top Offenders Summary -->
-<div class="card border-0 shadow-sm rounded-4 mb-4">
-    <div class="card-header bg-danger-subtle border-0 rounded-top-4 py-3">
-        <h6 class="fw-bold text-danger mb-0"><i class="bi bi-flag-fill me-2"></i>Flagged Students (Top Offenders)</h6>
+<div class="card border-0 shadow-sm rounded-4 mb-4" id="flaggedStudentsCard">
+    <div class="card-header bg-danger-subtle border-0 rounded-top-4 py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <h6 class="fw-bold text-danger mb-0"><i class="bi bi-flag-fill me-2"></i>Flagged Students (Recent Offenders)</h6>
+            <span class="badge bg-danger text-white rounded-pill px-2.5 py-1"><?php echo count($summaries); ?> total</span>
+        </div>
+        <small class="text-muted fw-semibold" id="offendersCountSummary">Showing top <?php echo min(3, count($summaries)); ?> recent</small>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -107,21 +112,29 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($summaries as $s):
+                    <?php foreach ($summaries as $idx => $s):
                         $risk = $s['serious'] >= 3 ? 'danger' : ($s['serious'] >= 1 ? 'warning' : 'secondary');
+                        $is_extra = ($idx >= 3);
                     ?>
-                    <tr>
+                    <tr class="offender-row <?php echo $is_extra ? 'd-none offender-extra' : ''; ?>" data-index="<?php echo $idx; ?>">
                         <td class="ps-4">
                             <div class="fw-semibold text-dark"><?php echo htmlspecialchars($s['name']); ?></div>
                             <small class="text-muted"><?php echo htmlspecialchars($s['email']); ?></small>
                         </td>
-                        <td><?php echo htmlspecialchars($s['exam_title']); ?></td>
+                        <td>
+                            <div class="fw-semibold text-dark"><?php echo htmlspecialchars($s['exam_title']); ?></div>
+                            <?php if (!empty($s['latest_violation'])): ?>
+                                <small class="text-muted"><i class="bi bi-clock me-1"></i><?php echo date('d M, h:i A', strtotime($s['latest_violation'])); ?></small>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <span class="badge bg-<?php echo $risk; ?> rounded-pill px-3 py-2 fs-6">
                                 <?php echo $s['serious']; ?>
                             </span>
                         </td>
-                        <td><?php echo $s['total']; ?></td>
+                        <td>
+                            <span class="fw-semibold text-dark"><?php echo $s['total']; ?></span>
+                        </td>
                         <td class="pe-4 text-end">
                             <a href="?student_id=<?php echo $s['student_id']; ?>&exam_id=<?php echo $s['exam_id']; ?>"
                                class="btn btn-sm btn-outline-danger fw-semibold">
@@ -134,7 +147,90 @@ if ($exams_res) while ($r = mysqli_fetch_assoc($exams_res)) $exams_list[] = $r;
             </table>
         </div>
     </div>
+    <?php if (count($summaries) > 3): ?>
+    <div class="card-footer bg-white border-0 py-3 rounded-bottom-4 d-flex justify-content-between align-items-center flex-wrap gap-2 border-top">
+        <div class="text-muted small">
+            Showing <strong id="offendersVisibleCount" class="text-dark">3</strong> of <strong class="text-dark"><?php echo count($summaries); ?></strong> flagged students
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-outline-danger fw-semibold px-3" id="btnNextThree" onclick="showNextOffenders(3)">
+                <i class="bi bi-chevron-down me-1"></i> Next 3
+            </button>
+            <button type="button" class="btn btn-sm btn-danger fw-semibold px-3" id="btnMaximizeAll" onclick="maximizeOffenders()">
+                <i class="bi bi-arrows-fullscreen me-1"></i> Maximize All (<?php echo count($summaries); ?>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold px-3 d-none" id="btnMinimizeOffenders" onclick="minimizeOffenders()">
+                <i class="bi bi-chevron-up me-1"></i> Top 3 Only
+            </button>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
+
+<script>
+let visibleOffendersCount = Math.min(3, <?php echo count($summaries); ?>);
+const totalOffendersCount = <?php echo count($summaries); ?>;
+
+function updateOffendersUI() {
+    const rows = document.querySelectorAll('.offender-row');
+    rows.forEach((row, idx) => {
+        if (idx < visibleOffendersCount) {
+            row.classList.remove('d-none');
+        } else {
+            row.classList.add('d-none');
+        }
+    });
+
+    const countElem = document.getElementById('offendersVisibleCount');
+    if (countElem) countElem.textContent = visibleOffendersCount;
+
+    const summaryElem = document.getElementById('offendersCountSummary');
+    if (summaryElem) {
+        if (visibleOffendersCount >= totalOffendersCount) {
+            summaryElem.textContent = `Showing all ${totalOffendersCount}`;
+        } else {
+            summaryElem.textContent = `Showing top ${visibleOffendersCount} recent`;
+        }
+    }
+
+    const btnNext = document.getElementById('btnNextThree');
+    const btnMax  = document.getElementById('btnMaximizeAll');
+    const btnMin  = document.getElementById('btnMinimizeOffenders');
+
+    if (btnNext && btnMax && btnMin) {
+        if (visibleOffendersCount >= totalOffendersCount) {
+            btnNext.classList.add('d-none');
+            btnMax.classList.add('d-none');
+            btnMin.classList.remove('d-none');
+        } else if (visibleOffendersCount > 3) {
+            btnNext.classList.remove('d-none');
+            btnMax.classList.remove('d-none');
+            btnMin.classList.remove('d-none');
+        } else {
+            btnNext.classList.remove('d-none');
+            btnMax.classList.remove('d-none');
+            btnMin.classList.add('d-none');
+        }
+    }
+}
+
+function showNextOffenders(step = 3) {
+    visibleOffendersCount = Math.min(totalOffendersCount, visibleOffendersCount + step);
+    updateOffendersUI();
+}
+
+function maximizeOffenders() {
+    visibleOffendersCount = totalOffendersCount;
+    updateOffendersUI();
+}
+
+function minimizeOffenders() {
+    visibleOffendersCount = Math.min(3, totalOffendersCount);
+    updateOffendersUI();
+    const card = document.getElementById('flaggedStudentsCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
 <?php endif; ?>
 
 <!-- Filters -->
