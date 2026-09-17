@@ -15,6 +15,7 @@ if (empty($_SESSION['csrf_token'])) {
 $error             = "";
 $success           = "";
 $pre_selected_exam = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
+$selected_qtype    = 'descriptive';
 
 // Flash messages
 if (!empty($_SESSION['flash_success'])) {
@@ -30,7 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $exam_id       = (int)($_POST['exam_id'] ?? 0);
         $question_text = trim($_POST['question_text'] ?? '');
-        $question_type = ($_POST['question_type'] ?? 'mcq') === 'descriptive' ? 'descriptive' : 'mcq';
+        $question_type = ($_POST['question_type'] ?? 'descriptive') === 'mcq' ? 'mcq' : 'descriptive';
+        $selected_qtype = $question_type;
 
         if (empty($exam_id) || empty($question_text)) {
             $error = "Please select an exam and provide the question text.";
@@ -143,7 +145,7 @@ $exams = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
 
 <div class="card shadow-sm border-0 rounded-4">
     <div class="card-body p-4">
-        <form method="POST" action="">
+        <form method="POST" action="" onreset="setTimeout(() => toggleQuestionType(document.getElementById('questionTypeSelect').value), 0)">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             <div class="row g-3 mb-4">
                 <div class="col-md-7">
@@ -162,8 +164,8 @@ $exams = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
                 <div class="col-md-5">
                     <label class="form-label fw-bold text-dark">Question Format</label>
                     <select name="question_type" id="questionTypeSelect" class="form-select form-select-lg" onchange="toggleQuestionType(this.value)">
-                        <option value="mcq" selected>Multiple Choice (MCQ)</option>
-                        <option value="descriptive">Descriptive (Written Answer)</option>
+                        <option value="descriptive" <?php echo ($selected_qtype === 'descriptive') ? 'selected' : ''; ?>>Descriptive (Written Answer)</option>
+                        <option value="mcq" <?php echo ($selected_qtype === 'mcq') ? 'selected' : ''; ?>>Multiple Choice (MCQ)</option>
                     </select>
                 </div>
             </div>
@@ -174,7 +176,7 @@ $exams = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
             </div>
 
             <!-- MCQ Fields Container -->
-            <div id="mcqContainer">
+            <div id="mcqContainer" style="<?php echo ($selected_qtype === 'descriptive') ? 'display: none;' : ''; ?>">
                 <div class="card bg-light border-0 p-3 mb-4 rounded-3">
                     <h6 class="fw-bold mb-3 text-secondary"><i class="bi bi-ui-checks me-1"></i> Multiple Choice Options</h6>
                     <div class="row g-3">
@@ -226,7 +228,7 @@ $exams = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
             </div>
 
             <!-- Descriptive Notice Container -->
-            <div id="descriptiveNotice" class="mb-4" style="display: none;">
+            <div id="descriptiveNotice" class="mb-4" style="<?php echo ($selected_qtype === 'descriptive') ? 'display: block;' : 'display: none;'; ?>">
                 <div class="alert alert-info border-0 bg-info-subtle">
                     <div class="d-flex align-items-start gap-2">
                         <i class="bi bi-info-circle-fill text-info fs-5 mt-0.5"></i>

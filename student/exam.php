@@ -728,9 +728,6 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 <button type="button" class="btn btn-outline-secondary px-4 fw-semibold" id="btnOpenExitModal">
                     <i class="bi bi-box-arrow-left me-1"></i> Exit Exam
                 </button>
-                <div class="d-none d-md-flex align-items-center text-muted small">
-                    <i class="bi bi-lightbulb text-warning me-1"></i> Tip: Use keyboard <kbd class="bg-light text-dark border px-1.5 py-0.5 rounded">&larr;</kbd> and <kbd class="bg-light text-dark border px-1.5 py-0.5 rounded">&rarr;</kbd> to switch questions
-                </div>
                 <button type="button" class="btn btn-success px-4 py-2 fw-bold shadow-sm" id="btnOpenSubmitModal">
                     <i class="bi bi-check-circle-fill me-1"></i> Finish &amp; Submit Exam
                 </button>
