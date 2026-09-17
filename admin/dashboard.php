@@ -98,27 +98,26 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
                     <?php if ($recent_results && mysqli_num_rows($recent_results) > 0): ?>
                         <?php while ($r = mysqli_fetch_assoc($recent_results)): 
                             $is_pending = (($r['status'] ?? 'published') === 'pending');
-                            $passed = $r['score'] >= 50;
                         ?>
                             <tr>
                                 <td class="ps-4 fw-semibold text-dark"><?php echo htmlspecialchars($r['student_name']); ?></td>
                                 <td class="text-dark"><?php echo htmlspecialchars($r['exam_title']); ?></td>
                                 <td>
                                     <?php if ($is_pending): ?>
-                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Draft (<?php echo $r['score']; ?>%)</span>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Draft: <?php echo $r['score']; ?> pts</span>
                                     <?php else: ?>
-                                        <span class="fw-bold text-dark"><?php echo $r['score']; ?>%</span>
+                                        <span class="fw-bold text-dark"><?php echo $r['score']; ?> pts</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
                                     <?php if ($is_pending): ?>
-                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3 py-1 fw-bold">
+                                        <span class="badge bg-warning text-dark border rounded-pill px-3 py-1 fw-bold">
                                             <i class="bi bi-hourglass-split me-1"></i> Pending Review
                                         </span>
-                                    <?php elseif ($passed): ?>
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">Passed</span>
                                     <?php else: ?>
-                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-1 fw-bold">Failed</span>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
+                                            <i class="bi bi-check-circle me-1"></i> Completed
+                                        </span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="pe-4 text-end text-muted small"><?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?></td>

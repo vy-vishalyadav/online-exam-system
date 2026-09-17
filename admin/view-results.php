@@ -43,13 +43,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $error = "Invalid request. Please try again.";
     } else {
         $result_id   = (int)($_POST['result_id'] ?? 0);
-        $new_status  = (isset($_POST['status']) && $_POST['status'] === 'published') ? 'published' : 'pending';
+        $new_status  = 'published'; // Always published instantly when admin clicks Save & Publish
         $admin_feedback = trim($_POST['admin_feedback'] ?? '');
         // Limit feedback length
         if (strlen($admin_feedback) > 2000) $admin_feedback = substr($admin_feedback, 0, 2000);
         $final_score = isset($_POST['final_score']) ? (float)$_POST['final_score'] : 0;
         if ($final_score < 0) $final_score = 0;
-        if ($final_score > 100) $final_score = 100;
         $final_score = round($final_score);
 
         // Update descriptive marks if submitted
@@ -77,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 if ($stmt) {
                     mysqli_stmt_bind_param($stmt, "diii", $m, $is_c, $ans_id, $result_id);
                     mysqli_stmt_execute($stmt);
-                    mysqli_stmt_close($stmt);
+                    $stmt = null;
                 }
             }
         }
@@ -88,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             mysqli_stmt_bind_param($stmt, "issi", $final_score, $new_status, $admin_feedback, $result_id);
             if (mysqli_stmt_execute($stmt)) {
                 mysqli_stmt_close($stmt);
-                $_SESSION['flash_success'] = "Result #$result_id updated successfully! (" . ($new_status === 'published' ? 'Published to Student' : 'Held as Pending Review') . ")";
+                $_SESSION['flash_success'] = "Result #$result_id evaluated and published successfully to the student!";
                 header("Location: view-results.php");
                 exit;
             } else {
@@ -216,16 +215,12 @@ if (!empty($result_ids)) {
 $q_stats = mysqli_query($conn, "SELECT 
     COUNT(*) AS total_attempts,
     SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
-    SUM(CASE WHEN status = 'published' AND score >= 50 THEN 1 ELSE 0 END) AS passed_count,
-    SUM(CASE WHEN status = 'published' AND score < 50 THEN 1 ELSE 0 END) AS failed_count,
-    AVG(CASE WHEN status = 'published' THEN score ELSE NULL END) AS avg_score
+    SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published_count
     FROM results");
-$stats          = ($q_stats ? mysqli_fetch_assoc($q_stats) : null);
-$total_attempts = $stats['total_attempts'] ?? 0;
-$pending_count  = $stats['pending_count'] ?? 0;
-$passed_count   = $stats['passed_count'] ?? 0;
-$failed_count   = $stats['failed_count'] ?? 0;
-$avg_score      = round($stats['avg_score'] ?? 0, 1);
+$stats           = ($q_stats ? mysqli_fetch_assoc($q_stats) : null);
+$total_attempts  = $stats['total_attempts'] ?? 0;
+$pending_count   = $stats['pending_count'] ?? 0;
+$published_count = $stats['published_count'] ?? 0;
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -254,28 +249,22 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
 
 <!-- Summary Cards -->
 <div class="row g-3 mb-4">
-    <div class="col-md-3 col-6">
+    <div class="col-md-4 col-12">
         <div class="card shadow-sm border-0 rounded-4 p-3 text-center bg-white">
             <small class="text-muted fw-semibold">Total Attempts</small>
             <h3 class="fw-extrabold text-dark mb-0 mt-1"><?php echo $total_attempts; ?></h3>
         </div>
     </div>
-    <div class="col-md-3 col-6">
+    <div class="col-md-4 col-6">
         <div class="card shadow-sm border-0 rounded-4 p-3 text-center bg-white">
             <small class="text-muted fw-semibold">Pending Review</small>
             <h3 class="fw-extrabold text-warning mb-0 mt-1"><?php echo $pending_count; ?></h3>
         </div>
     </div>
-    <div class="col-md-3 col-6">
+    <div class="col-md-4 col-6">
         <div class="card shadow-sm border-0 rounded-4 p-3 text-center bg-white">
-            <small class="text-muted fw-semibold">Published Passed</small>
-            <h3 class="fw-extrabold text-success mb-0 mt-1"><?php echo $passed_count; ?></h3>
-        </div>
-    </div>
-    <div class="col-md-3 col-6">
-        <div class="card shadow-sm border-0 rounded-4 p-3 text-center bg-white">
-            <small class="text-muted fw-semibold">Published Avg Score</small>
-            <h3 class="fw-extrabold text-primary mb-0 mt-1"><?php echo $avg_score; ?>%</h3>
+            <small class="text-muted fw-semibold">Published Results</small>
+            <h3 class="fw-extrabold text-success mb-0 mt-1"><?php echo $published_count; ?></h3>
         </div>
     </div>
 </div>
@@ -358,7 +347,6 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                         $i = 1;
                         foreach ($results_list as $r):
                             $is_pending = (($r['status'] ?? 'published') === 'pending');
-                            $passed     = $r['score'] >= 50;
                             $has_desc   = ((int)($r['desc_q_count'] ?? 0)) > 0;
                     ?>
                         <tr>
@@ -390,11 +378,11 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                             <td>
                                 <?php if ($is_pending): ?>
                                     <span class="badge bg-warning-subtle text-warning border border-warning-subtle fw-bold">
-                                        Draft: <?php echo $r['score']; ?>%
+                                        Draft: <?php echo $r['score']; ?> pts
                                     </span>
                                 <?php else: ?>
-                                    <span class="fw-bold fs-6 <?php echo $passed ? 'text-success' : 'text-danger'; ?>">
-                                        <?php echo $r['score']; ?>%
+                                    <span class="fw-bold fs-6 text-primary">
+                                        <?php echo $r['score']; ?> pts
                                     </span>
                                 <?php endif; ?>
                             </td>
@@ -403,13 +391,9 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                                     <span class="badge bg-warning text-dark border rounded-pill px-3 py-1 fw-bold">
                                         <i class="bi bi-hourglass-split me-1"></i> Pending Review
                                     </span>
-                                <?php elseif ($passed): ?>
-                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">
-                                        <i class="bi bi-check-circle-fill me-1"></i> Passed
-                                    </span>
                                 <?php else: ?>
-                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-1 fw-bold">
-                                        <i class="bi bi-x-circle-fill me-1"></i> Failed
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
+                                        <i class="bi bi-check-circle me-1"></i> Completed
                                     </span>
                                 <?php endif; ?>
                             </td>
@@ -630,44 +614,34 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
                         <div class="p-3 bg-light rounded-4 border">
                             <h6 class="fw-bold text-dark mb-3"><i class="bi bi-award-fill text-warning me-1"></i> Final Evaluation & Publishing</h6>
                             <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label class="form-label fw-bold text-dark mb-1">Final Score Percentage (%)</label>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold text-dark mb-1">Final Marks Awarded</label>
                                     <div class="input-group">
                                         <input type="number" 
                                                name="final_score" 
                                                id="final_score_input_<?php echo $rid; ?>" 
                                                class="form-control form-control-lg fw-extrabold text-primary" 
                                                min="0" 
-                                               max="100" 
+                                               max="<?php echo max(100, $total_max_marks); ?>" 
                                                value="<?php echo $r['score']; ?>" 
                                                required>
-                                        <span class="input-group-text fw-bold">%</span>
+                                        <span class="input-group-text fw-bold">pts</span>
                                     </div>
                                     <?php if ($has_items && !empty($desc_items)): ?>
                                         <button type="button" 
                                                 class="btn btn-sm btn-link text-decoration-none px-0 mt-1" 
-                                                onclick="calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>)">
-                                            <i class="bi bi-arrow-clockwise me-1"></i> Auto-Calculate from Marks
+                                                onclick="calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>)">
+                                            <i class="bi bi-arrow-clockwise me-1"></i> Auto-Sum from Question Marks
                                         </button>
                                     <?php endif; ?>
                                 </div>
 
-                                <div class="col-md-4">
-                                    <label class="form-label fw-bold text-dark mb-1">Result Release Status</label>
-                                    <select name="status" class="form-select form-select-lg fw-bold">
-                                        <option value="published" <?php echo ($r['status'] === 'published') ? 'selected' : ''; ?>>✅ Published to Student</option>
-                                        <option value="pending" <?php echo ($r['status'] === 'pending') ? 'selected' : ''; ?>>⏳ Keep Pending Review</option>
-                                    </select>
-                                    <small class="text-muted d-block mt-1">When set to Published, student can view their score &amp; feedback.</small>
-                                </div>
-
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label fw-bold text-dark mb-1">Grading Summary</label>
-                                    <div class="border rounded-3 p-2 bg-white text-muted small">
-                                        <div>Total Questions: <strong><?php echo $r['total_q']; ?></strong> (<?php echo count($mcq_items); ?> MCQ, <?php echo count($desc_items); ?> Desc)</div>
-                                        <div>Total Max Marks: <strong><?php echo $total_max_marks; ?></strong></div>
-                                        <div>MCQ Earned: <strong><?php echo $mcq_earned_marks; ?> / <?php echo $mcq_total_marks; ?></strong> pts</div>
-                                        <div>Pass Threshold: <strong>50%</strong></div>
+                                    <div class="border rounded-3 p-3 bg-white text-muted small">
+                                        <div>Total Questions: <strong class="text-dark"><?php echo $r['total_q']; ?></strong> (<?php echo count($mcq_items); ?> MCQ, <?php echo count($desc_items); ?> Desc)</div>
+                                        <div>Total Max Marks: <strong class="text-dark"><?php echo $total_max_marks; ?> pts</strong></div>
+                                        <div>MCQ Marks Earned: <strong class="text-dark"><?php echo $mcq_earned_marks; ?> / <?php echo $mcq_total_marks; ?> pts</strong></div>
                                     </div>
                                 </div>
 
@@ -697,9 +671,7 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
     <?php endforeach; ?>
 
     <script>
-    function calculateTotalScore(resultId, mcqEarnedMarks, totalMaxMarks) {
-        if (!totalMaxMarks || totalMaxMarks <= 0) return;
-        
+    function calculateTotalScore(resultId, mcqEarnedMarks) {
         let descInputs = document.querySelectorAll('.desc-mark-input-' + resultId);
         let descEarned = 0;
         descInputs.forEach(function(input) {
@@ -710,13 +682,11 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
         });
 
         let totalEarned = (parseFloat(mcqEarnedMarks) || 0) + descEarned;
-        let percentage = Math.round((totalEarned / totalMaxMarks) * 100);
-        if (percentage < 0) percentage = 0;
-        if (percentage > 100) percentage = 100;
+        if (totalEarned < 0) totalEarned = 0;
 
         let scoreInput = document.getElementById('final_score_input_' + resultId);
         if (scoreInput) {
-            scoreInput.value = percentage;
+            scoreInput.value = Math.round(totalEarned);
         }
     }
     </script>

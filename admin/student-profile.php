@@ -70,11 +70,10 @@ mysqli_stmt_close($stmt);
 $total_violations = array_sum(array_column($violations, 'cnt'));
 
 // Stats
-$total_attempts = count($results);
-$published = array_filter($results, fn($r) => $r['status'] === 'published');
-$passed = count(array_filter($published, fn($r) => $r['score'] >= 50));
-$pass_rate = count($published) > 0 ? round($passed / count($published) * 100) : 0;
-$avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($published), 'score')) / count($published), 1) : 0;
+$total_attempts  = count($results);
+$published       = array_filter($results, fn($r) => $r['status'] === 'published');
+$published_count = count($published);
+$avg_score       = $published_count > 0 ? round(array_sum(array_column(array_values($published), 'score')) / $published_count, 1) : 0;
 ?>
 
 <!-- Breadcrumb -->
@@ -141,13 +140,13 @@ $avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($
             </div>
             <div class="col-6 col-md-3">
                 <div class="text-center p-3 bg-light rounded-3">
-                    <div class="fw-extrabold fs-3 <?php echo $pass_rate >= 50 ? 'text-success' : 'text-danger'; ?>"><?php echo $pass_rate; ?>%</div>
-                    <div class="text-muted small">Pass Rate</div>
+                    <div class="fw-extrabold fs-3 text-success"><?php echo $published_count; ?></div>
+                    <div class="text-muted small">Published Results</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
                 <div class="text-center p-3 bg-light rounded-3">
-                    <div class="fw-extrabold fs-3 text-dark"><?php echo $avg_score; ?>%</div>
+                    <div class="fw-extrabold fs-3 text-dark"><?php echo $avg_score; ?> pts</div>
                     <div class="text-muted small">Avg Score</div>
                 </div>
             </div>
@@ -188,7 +187,6 @@ $avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($
                             </td></tr>
                             <?php else: $i = 1; foreach ($results as $r):
                                 $pending = ($r['status'] ?? 'published') === 'pending';
-                                $passed  = !$pending && $r['score'] >= 50;
                                 $tt = (int)($r['time_taken_seconds'] ?? 0);
                             ?>
                             <tr>
@@ -196,10 +194,10 @@ $avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($
                                 <td class="fw-semibold text-dark"><?php echo htmlspecialchars($r['exam_title']); ?></td>
                                 <td>
                                     <?php if ($pending): ?>
-                                        <span class="text-muted fst-italic">Pending</span>
+                                        <span class="text-muted fst-italic">Draft: <?php echo $r['score']; ?> pts</span>
                                     <?php else: ?>
-                                        <span class="fw-bold <?php echo $passed ? 'text-success' : 'text-danger'; ?>">
-                                            <?php echo $r['score']; ?>%
+                                        <span class="fw-bold text-primary">
+                                            <?php echo $r['score']; ?> pts
                                         </span>
                                     <?php endif; ?>
                                 </td>
@@ -208,11 +206,13 @@ $avg_score = count($published) > 0 ? round(array_sum(array_column(array_values($
                                 </td>
                                 <td>
                                     <?php if ($pending): ?>
-                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2 py-1">Under Review</span>
-                                    <?php elseif ($passed): ?>
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1">Passed</span>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2.5 py-1 fw-bold">
+                                            <i class="bi bi-hourglass-split me-1"></i> Under Review
+                                        </span>
                                     <?php else: ?>
-                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1">Failed</span>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2.5 py-1 fw-bold">
+                                            <i class="bi bi-check-circle me-1"></i> Completed
+                                        </span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="pe-4 text-end text-muted"><?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?></td>
