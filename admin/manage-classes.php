@@ -13,21 +13,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         $error = "Invalid request.";
     } else {
         $cid = (int)($_POST['id'] ?? 0);
-        // Block delete if students assigned
+        // Check if students are currently assigned to this class
         $chk = mysqli_prepare($conn, "SELECT COUNT(*) FROM students WHERE class_id=?");
         mysqli_stmt_bind_param($chk, "i", $cid);
         mysqli_stmt_execute($chk);
         mysqli_stmt_bind_result($chk, $cnt);
         mysqli_stmt_fetch($chk);
         mysqli_stmt_close($chk);
+
+        // Safely unassign any students enrolled in this class
         if ($cnt > 0) {
-            $_SESSION['flash_error'] = "Cannot delete — $cnt student(s) still assigned to this class.";
-        } else {
-            $stmt = mysqli_prepare($conn, "DELETE FROM classes WHERE id=?");
-            mysqli_stmt_bind_param($stmt, "i", $cid);
-            mysqli_stmt_execute($stmt) ? $_SESSION['flash_success'] = "Class deleted." : $_SESSION['flash_error'] = "Delete failed.";
-            mysqli_stmt_close($stmt);
+            $u = mysqli_prepare($conn, "UPDATE students SET class_id = NULL WHERE class_id = ?");
+            mysqli_stmt_bind_param($u, "i", $cid);
+            mysqli_stmt_execute($u);
+            mysqli_stmt_close($u);
         }
+
+        // Remove any exam class assignments for this class
+        $d = mysqli_prepare($conn, "DELETE FROM exam_class_assignments WHERE class_id = ?");
+        mysqli_stmt_bind_param($d, "i", $cid);
+        mysqli_stmt_execute($d);
+        mysqli_stmt_close($d);
+
+        // Delete the class record
+        $stmt = mysqli_prepare($conn, "DELETE FROM classes WHERE id=?");
+        mysqli_stmt_bind_param($stmt, "i", $cid);
+        if (mysqli_stmt_execute($stmt)) {
+            $_SESSION['flash_success'] = "Class deleted successfully" . ($cnt > 0 ? " ($cnt student(s) unassigned)." : ".");
+        } else {
+            $_SESSION['flash_error'] = "Delete failed: " . mysqli_error($conn);
+        }
+        mysqli_stmt_close($stmt);
+
         safe_redirect("manage-classes.php");
     }
 }
@@ -250,11 +267,11 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
                                     </button>
                                 </form>
                                 <!-- Delete -->
-                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete class <?php echo htmlspecialchars($c['name'], ENT_QUOTES); ?>?')">
+                                <form method="POST" style="display:inline;" onsubmit="return confirmDeleteClass('<?php echo htmlspecialchars(addslashes($c['name']), ENT_QUOTES); ?>', <?php echo (int)$c['student_count']; ?>);">
                                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                                     <input type="hidden" name="action" value="delete_class">
                                     <input type="hidden" name="id" value="<?php echo $c['id']; ?>">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm" <?php echo $c['student_count'] > 0 ? 'disabled title="Move students first"' : ''; ?>>
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" title="<?php echo $c['student_count'] > 0 ? 'Delete class (' . $c['student_count'] . ' student(s) enrolled)' : 'Delete class'; ?>">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
@@ -340,8 +357,18 @@ while ($row = mysqli_fetch_assoc($classes_res)) $classes[] = $row;
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="submit" class="btn btn-primary fw-bold"><i class="bi bi-plus-circle me-1"></i>Add Class</button>
             </div>
-        </form>
-    </div></div>
+            </form>
+        </div>
+    </div>
 </div>
+
+<script>
+function confirmDeleteClass(className, studentCount) {
+    if (studentCount > 0) {
+        return confirm("Class '" + className + "' currently has " + studentCount + " student(s) enrolled.\n\nDeleting this class will unassign these " + studentCount + " student(s) (they will remain in the system with 'No Class').\n\nTo move students to another class instead, click Cancel and use the 'Promote / Move Students' tool.\n\nAre you sure you want to proceed with deleting this class?");
+    }
+    return confirm("Are you sure you want to delete class '" + className + "'?");
+}
+</script>
 
 <?php include '../includes/footer.php'; ?>

@@ -420,7 +420,7 @@ if ($exams) {
                         <label class="form-label fw-semibold">Exam Title <span class="text-danger">*</span></label>
                         <input type="text" name="title" class="form-control" placeholder="e.g. Science &amp; Technology Quiz" required maxlength="200">
                     </div>
-                    <input type="hidden" name="duration_minutes" id="add_duration" value="30">
+                    <input type="hidden" name="duration_minutes" id="add_duration" value="">
                     <input type="hidden" name="result_mode" value="instant">
                     <hr class="my-3">
                     <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
@@ -437,7 +437,7 @@ if ($exams) {
                         </div>
                     </div>
                     <div class="mt-2 text-muted small">
-                        <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-primary-subtle text-primary fw-bold" id="add_calc_badge">-- mins</span>
+                        <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-secondary-subtle text-secondary fw-bold" id="add_calc_badge">-- mins</span>
                     </div>
                     <hr class="my-3">
                     <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
@@ -505,6 +505,16 @@ document.addEventListener("DOMContentLoaded", function() {
         setTimeout(updateScrollWidth, 300);
     }
 
+    // ── Duration Text Formatter ──
+    function formatDurationText(mins) {
+        if (mins < 60) {
+            return mins + ' min' + (mins === 1 ? '' : 's');
+        }
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return m > 0 ? (mins + ' mins (' + h + 'h ' + m + 'm)') : (mins + ' mins (' + h + ' hr' + (h === 1 ? '' : 's') + ')');
+    }
+
     // ── Add Exam Duration Auto-Calculation ──
     const startIn   = document.getElementById('add_start_at');
     const endIn     = document.getElementById('add_end_at');
@@ -512,7 +522,7 @@ document.addEventListener("DOMContentLoaded", function() {
     const addBadge  = document.getElementById('add_calc_badge');
 
     function updateAddDuration() {
-        if (!startIn || !endIn) return;
+        if (!startIn || !endIn || !addBadge) return;
         if (startIn.value && endIn.value) {
             const s = new Date(startIn.value);
             const e = new Date(endIn.value);
@@ -520,18 +530,33 @@ document.addEventListener("DOMContentLoaded", function() {
                 const diffMins = Math.round((e - s) / 60000);
                 if (diffMins > 0) {
                     if (durIn) durIn.value = diffMins;
-                    if (addBadge) addBadge.textContent = diffMins + ' mins';
+                    addBadge.className = 'badge bg-primary-subtle text-primary fw-bold';
+                    addBadge.textContent = formatDurationText(diffMins);
                 } else {
-                    if (addBadge) addBadge.textContent = 'Closes At must be after Opens At';
+                    if (durIn) durIn.value = '';
+                    addBadge.className = 'badge bg-danger-subtle text-danger fw-bold';
+                    addBadge.textContent = 'Closes At must be after Opens At';
                 }
+            } else {
+                if (durIn) durIn.value = '';
+                addBadge.className = 'badge bg-secondary-subtle text-secondary fw-bold';
+                addBadge.textContent = '-- mins';
             }
-        } else if (durIn && addBadge) {
-            addBadge.textContent = (durIn.value || 30) + ' mins';
+        } else {
+            if (durIn) durIn.value = '';
+            addBadge.className = 'badge bg-secondary-subtle text-secondary fw-bold';
+            addBadge.textContent = '-- mins';
         }
     }
 
-    if (startIn) startIn.addEventListener('change', updateAddDuration);
-    if (endIn)   endIn.addEventListener('change', updateAddDuration);
+    if (startIn) {
+        startIn.addEventListener('input', updateAddDuration);
+        startIn.addEventListener('change', updateAddDuration);
+    }
+    if (endIn) {
+        endIn.addEventListener('input', updateAddDuration);
+        endIn.addEventListener('change', updateAddDuration);
+    }
     updateAddDuration();
 
     // ── Edit Exam Duration Auto-Calculation ──
@@ -542,7 +567,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const badgeEl = document.getElementById('edit_calc_badge_' + id);
 
         function updateEditDuration() {
-            if (!startEl || !endEl) return;
+            if (!startEl || !endEl || !badgeEl) return;
             if (startEl.value && endEl.value) {
                 const s = new Date(startEl.value);
                 const e = new Date(endEl.value);
@@ -550,16 +575,28 @@ document.addEventListener("DOMContentLoaded", function() {
                     const diffMins = Math.round((e - s) / 60000);
                     if (diffMins > 0) {
                         if (durEl) durEl.value = diffMins;
-                        if (badgeEl) badgeEl.textContent = diffMins + ' mins';
+                        badgeEl.className = 'badge bg-primary-subtle text-primary fw-bold';
+                        badgeEl.textContent = formatDurationText(diffMins);
                     } else {
-                        if (badgeEl) badgeEl.textContent = 'Invalid duration';
+                        badgeEl.className = 'badge bg-danger-subtle text-danger fw-bold';
+                        badgeEl.textContent = 'Closes At must be after Opens At';
                     }
+                } else {
+                    badgeEl.className = 'badge bg-secondary-subtle text-secondary fw-bold';
+                    badgeEl.textContent = '-- mins';
                 }
+            } else {
+                badgeEl.className = 'badge bg-secondary-subtle text-secondary fw-bold';
+                badgeEl.textContent = '-- mins';
             }
         }
 
+        startEl.addEventListener('input', updateEditDuration);
         startEl.addEventListener('change', updateEditDuration);
-        if (endEl) endEl.addEventListener('change', updateEditDuration);
+        if (endEl) {
+            endEl.addEventListener('input', updateEditDuration);
+            endEl.addEventListener('change', updateEditDuration);
+        }
     });
 
     <?php if (isset($_GET['action']) && $_GET['action'] === 'new'): ?>
