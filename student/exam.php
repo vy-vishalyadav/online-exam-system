@@ -553,6 +553,41 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         </span>
     </div>
 
+    <!-- CBT Question Palette & Progress Tracker -->
+    <div class="question-palette-card shadow-sm mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary rounded-pill px-3 py-1.5 fs-6">
+                    Question <span id="currentQDisplay">1</span> of <?php echo $total_questions; ?>
+                </span>
+                <span class="text-muted small d-none d-sm-inline">
+                    • <span id="answeredCountDisplay">0</span>/<?php echo $total_questions; ?> Answered (<span id="progressPercentDisplay">0%</span>)
+                </span>
+            </div>
+            <div class="d-flex align-items-center gap-3 small text-muted">
+                <span><span class="palette-legend-dot dot-answered"></span> Answered</span>
+                <span><span class="palette-legend-dot dot-unanswered"></span> Unanswered</span>
+                <span><span class="palette-legend-dot dot-current"></span> Current</span>
+            </div>
+        </div>
+        
+        <div class="progress mb-3" style="height: 6px; border-radius: 10px; background-color: #f1f5f9;">
+            <div id="examProgressBar" class="progress-bar bg-success rounded-pill" role="progressbar" style="width: 0%; transition: width 0.3s ease;"></div>
+        </div>
+
+        <div class="palette-grid" id="paletteGrid">
+            <?php foreach ($questions as $idx => $quest): ?>
+                <button type="button"
+                        class="palette-btn unanswered-q <?php echo $idx === 0 ? 'active-q' : ''; ?>"
+                        id="paletteBtn_<?php echo $idx; ?>"
+                        onclick="goToQuestion(<?php echo $idx; ?>)"
+                        title="Question <?php echo $idx + 1; ?>">
+                    <?php echo $idx + 1; ?>
+                </button>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
     <form method="POST" action="result.php" id="examForm" onsubmit="return isAutoSubmitting;">
         <input type="hidden" name="exam_id"          value="<?php echo $exam_id; ?>">
         <input type="hidden" name="submit_exam"      value="1">
@@ -566,17 +601,26 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             $q_id    = $q['id'];
             $draft   = $draft_answers[$q_id] ?? '';
         ?>
-            <div class="question-card shadow-sm mb-4">
+            <div class="question-card shadow-sm mb-4 <?php echo $index === 0 ? '' : 'd-none'; ?>"
+                 id="questionCard_<?php echo $index; ?>"
+                 data-qid="<?php echo $q_id; ?>"
+                 data-type="<?php echo $is_desc ? 'descriptive' : 'mcq'; ?>"
+                 data-index="<?php echo $index; ?>">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <span class="badge bg-primary rounded-pill px-3 py-2 fs-6">Q<?php echo $q_num; ?> of <?php echo $total_questions; ?></span>
-                    <?php if ($is_desc): ?>
-                        <span class="badge bg-warning text-dark border"><i class="bi bi-pencil-square me-1"></i> Descriptive</span>
-                    <?php else: ?>
-                        <span class="badge bg-light text-muted border">Multiple Choice</span>
-                    <?php endif; ?>
+                    <div class="d-flex align-items-center gap-2">
+                        <?php if ($is_desc): ?>
+                            <span class="badge bg-warning text-dark border"><i class="bi bi-pencil-square me-1"></i> Descriptive</span>
+                        <?php else: ?>
+                            <span class="badge bg-light text-muted border"><i class="bi bi-check2-circle me-1"></i> Multiple Choice</span>
+                        <?php endif; ?>
+                        <?php if (!empty($q['marks'])): ?>
+                            <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-2.5 py-1.5"><?php echo (int)$q['marks']; ?> Marks</span>
+                        <?php endif; ?>
+                    </div>
                 </div>
 
-                <h5 class="fw-bold text-dark mb-4"><?php echo htmlspecialchars($q['question_text']); ?></h5>
+                <h5 class="fw-bold text-dark mb-4 lh-base"><?php echo htmlspecialchars($q['question_text']); ?></h5>
 
                 <?php if ($is_desc): ?>
                     <div class="mb-3">
@@ -586,7 +630,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                         <textarea name="descriptive_answer[<?php echo $q_id; ?>]"
                                   id="desc_<?php echo $q_id; ?>"
                                   class="form-control descriptive-input p-3 shadow-sm rounded-3"
-                                  rows="5"
+                                  rows="6"
                                   placeholder="Type your answer here manually..."
                                   maxlength="5000"
                                   data-qid="<?php echo $q_id; ?>"
@@ -602,7 +646,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                         </div>
                     </div>
                 <?php else: ?>
-                    <div class="options-container">
+                    <div class="options-container mb-3">
                         <?php foreach (['A','B','C','D'] as $lbl):
                             $opt_key = 'option_' . strtolower($lbl);
                             $checked = ($draft === $lbl) ? 'checked' : '';
@@ -618,16 +662,52 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                         <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
+
+                <!-- Per-Question Bottom Navigation & Controls -->
+                <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-secondary px-3 py-2 fw-semibold"
+                                onclick="prevQuestion()" <?php echo $index === 0 ? 'disabled' : ''; ?>>
+                            <i class="bi bi-arrow-left me-1"></i> Previous
+                        </button>
+                        <?php if ($is_desc): ?>
+                            <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold"
+                                    onclick="clearAnswer(<?php echo $q_id; ?>, 'desc')" title="Erase written response">
+                                <i class="bi bi-eraser me-1"></i> Clear Response
+                            </button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold"
+                                    onclick="clearAnswer(<?php echo $q_id; ?>, 'mcq')" title="Deselect chosen option">
+                                <i class="bi bi-eraser me-1"></i> Clear Choice
+                            </button>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2">
+                        <?php if ($index < $total_questions - 1): ?>
+                            <button type="button" class="btn btn-primary px-4 py-2 fw-bold" onclick="nextQuestion()">
+                                Next <i class="bi bi-arrow-right ms-1"></i>
+                            </button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-success px-4 py-2 fw-bold shadow-sm" onclick="openSubmitModal()">
+                                <i class="bi bi-send-check-fill me-1"></i> Review &amp; Submit
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         <?php endforeach; ?>
 
-        <div class="card shadow-sm border-0 rounded-4 p-4 mb-5">
-            <div class="d-flex justify-content-between align-items-center">
+        <div class="card shadow-sm border-0 rounded-4 p-3 mb-5">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <button type="button" class="btn btn-outline-secondary px-4 fw-semibold" id="btnOpenExitModal">
-                    <i class="bi bi-arrow-left me-1"></i> Exit Exam
+                    <i class="bi bi-box-arrow-left me-1"></i> Exit Exam
                 </button>
-                <button type="button" class="btn btn-success px-5 py-2.5 fw-bold shadow" id="btnOpenSubmitModal">
-                    <i class="bi bi-check-circle-fill me-1"></i> Submit Exam
+                <div class="d-none d-md-flex align-items-center text-muted small">
+                    <i class="bi bi-lightbulb text-warning me-1"></i> Tip: Use keyboard <kbd class="bg-light text-dark border px-1.5 py-0.5 rounded">&larr;</kbd> and <kbd class="bg-light text-dark border px-1.5 py-0.5 rounded">&rarr;</kbd> to switch questions
+                </div>
+                <button type="button" class="btn btn-success px-4 py-2 fw-bold shadow-sm" id="btnOpenSubmitModal">
+                    <i class="bi bi-check-circle-fill me-1"></i> Finish &amp; Submit Exam
                 </button>
             </div>
         </div>
@@ -671,6 +751,9 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 updateCharCount(parseInt(qid), val.length);
             }
         });
+
+        // Initialize question palette and status counters
+        updatePaletteStatus();
 
         // ── Wire up Exit confirmation modal (keeps fullscreen active, 0 violations) ──
         const btnExit = document.getElementById('btnOpenExitModal');
@@ -753,6 +836,155 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         }
     });
 
+    // ── CBT Single Question Navigation & Palette State ────────────────────────
+    let currentQuestionIndex = 0;
+
+    function isQuestionAnswered(index) {
+        const card = document.getElementById(`questionCard_${index}`);
+        if (!card) return false;
+        const qId  = card.getAttribute('data-qid');
+        const type = card.getAttribute('data-type');
+
+        if (type === 'descriptive') {
+            const ta = document.getElementById(`desc_${qId}`);
+            return !!(ta && ta.value.trim().length > 0);
+        } else {
+            const radio = document.querySelector(`input[type="radio"][name="answer[${qId}]"]:checked`);
+            return !!radio;
+        }
+    }
+
+    function updatePaletteStatus() {
+        let answeredCount = 0;
+
+        for (let i = 0; i < TOTAL_Q; i++) {
+            const btn = document.getElementById(`paletteBtn_${i}`);
+            const answered = isQuestionAnswered(i);
+
+            if (answered) answeredCount++;
+
+            if (btn) {
+                if (answered) {
+                    btn.classList.add('answered-q');
+                    btn.classList.remove('unanswered-q');
+                } else {
+                    btn.classList.remove('answered-q');
+                    btn.classList.add('unanswered-q');
+                }
+
+                if (i === currentQuestionIndex) {
+                    btn.classList.add('active-q');
+                    btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                } else {
+                    btn.classList.remove('active-q');
+                }
+            }
+        }
+
+        const curQDisp = document.getElementById('currentQDisplay');
+        if (curQDisp) curQDisp.textContent = currentQuestionIndex + 1;
+
+        const ansDisp = document.getElementById('answeredCountDisplay');
+        if (ansDisp) ansDisp.textContent = answeredCount;
+
+        const pct = TOTAL_Q > 0 ? Math.round((answeredCount / TOTAL_Q) * 100) : 0;
+        const pctDisp = document.getElementById('progressPercentDisplay');
+        if (pctDisp) pctDisp.textContent = `${pct}%`;
+
+        const bar = document.getElementById('examProgressBar');
+        if (bar) bar.style.width = `${pct}%`;
+    }
+
+    function goToQuestion(index) {
+        if (index < 0 || index >= TOTAL_Q) return;
+
+        // Hide current active card
+        const curCard = document.getElementById(`questionCard_${currentQuestionIndex}`);
+        if (curCard) curCard.classList.add('d-none');
+
+        // Show requested card
+        currentQuestionIndex = index;
+        const targetCard = document.getElementById(`questionCard_${currentQuestionIndex}`);
+        if (targetCard) {
+            targetCard.classList.remove('d-none');
+            // Re-run math typesetting if KaTeX is present
+            if (typeof renderMathInElement === 'function') {
+                try {
+                    renderMathInElement(targetCard, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$',  right: '$',  display: false},
+                            {left: '\\(', right: '\\)', display: false},
+                            {left: '\\[', right: '\\]', display: true}
+                        ],
+                        throwOnError: false,
+                        trust: false
+                    });
+                } catch(e) {}
+            }
+        }
+
+        // Scroll into view if page has scrolled down
+        const palCard = document.querySelector('.question-palette-card');
+        if (palCard && window.scrollY > palCard.offsetTop) {
+            palCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        updatePaletteStatus();
+    }
+
+    function nextQuestion() {
+        if (currentQuestionIndex < TOTAL_Q - 1) {
+            goToQuestion(currentQuestionIndex + 1);
+        } else {
+            openSubmitModal();
+        }
+    }
+
+    function prevQuestion() {
+        if (currentQuestionIndex > 0) {
+            goToQuestion(currentQuestionIndex - 1);
+        }
+    }
+
+    function clearAnswer(qId, type) {
+        if (type === 'descriptive') {
+            const ta = document.getElementById(`desc_${qId}`);
+            if (ta) {
+                ta.value = '';
+                updateCharCount(qId, 0);
+            }
+        } else {
+            const checkedRadio = document.querySelector(`input[type="radio"][name="answer[${qId}]"]:checked`);
+            if (checkedRadio) checkedRadio.checked = false;
+
+            ['A','B','C','D'].forEach(opt => {
+                const el = document.getElementById(`wrapper_${qId}_${opt}`);
+                if (el) el.classList.remove('selected');
+            });
+        }
+
+        lsSave(qId, '');
+        autoSaveNow(qId, '');
+        updatePaletteStatus();
+    }
+
+    // Keyboard shortcuts for CBT navigation: Left / Right arrows
+    document.addEventListener('keydown', function(e) {
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+        if (document.querySelector('.modal.show')) return;
+        const fsOverlay = document.getElementById('fullscreenOverlay');
+        if (fsOverlay && fsOverlay.style.display !== 'none') return;
+
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+            e.preventDefault();
+            nextQuestion();
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+            e.preventDefault();
+            prevQuestion();
+        }
+    });
+
     // ── Option highlight ──────────────────────────────────────────────────────
     function selectOption(qId, choice, doSave = true) {
         ['A','B','C','D'].forEach(opt => {
@@ -766,6 +998,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             lsSave(qId, choice);
             autoSaveNow(qId, choice);
         }
+        updatePaletteStatus();
     }
 
     // ── Descriptive char counter ──────────────────────────────────────────────
@@ -779,6 +1012,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     function scheduleAutoSave(qId, val) {
         lsSave(qId, val);
         updateCharCount(qId, val.length);
+        updatePaletteStatus();
         clearTimeout(saveTimers[qId]);
         saveTimers[qId] = setTimeout(() => autoSaveNow(qId, val), 1500); // 1.5s debounce
     }
