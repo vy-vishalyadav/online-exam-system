@@ -176,6 +176,18 @@ function run_auto_migrations($conn) {
     if ($check && mysqli_num_rows($check) === 0) {
         @mysqli_query($conn, "ALTER TABLE admin ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
     }
+
+    // 16. exams.questions_to_display — anti-cheat question pool limit (0 = all questions)
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM exams LIKE 'questions_to_display'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE exams ADD COLUMN questions_to_display INT NOT NULL DEFAULT 0 AFTER end_at");
+    }
+
+    // 17. exam_sessions.assigned_questions — student-locked question IDs for consistent pool subset & order
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM exam_sessions LIKE 'assigned_questions'");
+    if ($check && mysqli_num_rows($check) === 0) {
+        @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN assigned_questions TEXT NULL AFTER question_seed");
+    }
 }
 }
 

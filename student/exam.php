@@ -142,7 +142,7 @@ if (!$sess_row) {
 
 // Fetch session using TIMESTAMPDIFF on MySQL's internal clock
 $sess_stmt = mysqli_prepare($conn,
-    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, question_seed, submitted
+    "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS elapsed_seconds, duration_minutes, question_seed, assigned_questions, submitted
      FROM exam_sessions WHERE student_id=? AND exam_id=? LIMIT 1");
 mysqli_stmt_bind_param($sess_stmt, "ii", $student_id, $exam_id);
 mysqli_stmt_execute($sess_stmt);
@@ -225,38 +225,80 @@ if ($is_fresh_session) {
 }
 
 
-// ── Fetch questions ──────────────────────────────────────────────────────────
-$q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+// ── Fetch questions (Anti-Cheat Question Pool & Locked Ordering) ─────────────
 $questions = [];
-if ($q_stmt) {
-    mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
-    mysqli_stmt_execute($q_stmt);
-    $questions_res = mysqli_stmt_get_result($q_stmt);
-    if ($questions_res) {
-        while ($q = mysqli_fetch_assoc($questions_res)) {
-            $questions[] = $q;
+$pool_limit = (int)($exam['questions_to_display'] ?? 0);
+
+if (!empty($session['assigned_questions'])) {
+    // Resuming session with already locked assigned questions
+    $assigned_ids = array_filter(array_map('intval', explode(',', $session['assigned_questions'])));
+    if (!empty($assigned_ids)) {
+        $in_clause = implode(',', $assigned_ids);
+        $q_res = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$exam_id);
+        $q_map = [];
+        if ($q_res) {
+            while ($q = mysqli_fetch_assoc($q_res)) {
+                $q_map[(int)$q['id']] = $q;
+            }
+        }
+        foreach ($assigned_ids as $aid) {
+            if (isset($q_map[$aid])) {
+                $questions[] = $q_map[$aid];
+            }
         }
     }
-    mysqli_stmt_close($q_stmt);
+}
+
+// If fresh session or assigned_questions wasn't set yet:
+if (empty($questions)) {
+    $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+    $all_pool = [];
+    if ($q_stmt) {
+        mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
+        mysqli_stmt_execute($q_stmt);
+        $questions_res = mysqli_stmt_get_result($q_stmt);
+        if ($questions_res) {
+            while ($q = mysqli_fetch_assoc($questions_res)) {
+                $all_pool[] = $q;
+            }
+        }
+        mysqli_stmt_close($q_stmt);
+    }
+    $total_in_pool = count($all_pool);
+    if ($total_in_pool > 0) {
+        // Seed-based shuffle per student attempt
+        $seed_int = hexdec(substr(md5($session['question_seed']), 0, 8));
+        mt_srand($seed_int);
+        $indices = range(0, $total_in_pool - 1);
+        for ($i = $total_in_pool - 1; $i > 0; $i--) {
+            $j = mt_rand(0, $i);
+            [$indices[$i], $indices[$j]] = [$indices[$j], $indices[$i]];
+        }
+        $shuffled = [];
+        foreach ($indices as $idx) {
+            $shuffled[] = $all_pool[$idx];
+        }
+
+        // Apply Question Pool limit if configured
+        if ($pool_limit > 0 && $pool_limit < count($shuffled)) {
+            $questions = array_slice($shuffled, 0, $pool_limit);
+        } else {
+            $questions = $shuffled;
+        }
+
+        // Lock assigned questions into session for consistency across reloads
+        $assigned_ids = array_map(function($q) { return (int)$q['id']; }, $questions);
+        $assigned_str = implode(',', $assigned_ids);
+        $upd_as = mysqli_prepare($conn, "UPDATE exam_sessions SET assigned_questions=? WHERE student_id=? AND exam_id=?");
+        if ($upd_as) {
+            mysqli_stmt_bind_param($upd_as, "sii", $assigned_str, $student_id, $exam_id);
+            mysqli_stmt_execute($upd_as);
+            mysqli_stmt_close($upd_as);
+        }
+        $session['assigned_questions'] = $assigned_str;
+    }
 }
 $total_questions = count($questions);
-
-// ── Phase 1: Randomize question order per student (seeded shuffle) ───────────
-if ($total_questions > 0) {
-    // Use seed derived from student+exam so same student always gets same order
-    $seed_int = hexdec(substr(md5($session['question_seed']), 0, 8));
-    mt_srand($seed_int);
-    $indices = range(0, $total_questions - 1);
-    for ($i = $total_questions - 1; $i > 0; $i--) {
-        $j = mt_rand(0, $i);
-        [$indices[$i], $indices[$j]] = [$indices[$j], $indices[$i]];
-    }
-    $shuffled = [];
-    foreach ($indices as $idx) {
-        $shuffled[] = $questions[$idx];
-    }
-    $questions = $shuffled;
-}
 
 // ── Phase 1: Shuffle MCQ options per question (seeded) ──────────────────────
 $option_maps = []; // [q_id => ['A'=>'origA','B'=>'origC', ...]]

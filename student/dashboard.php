@@ -88,6 +88,13 @@ $exams = mysqli_stmt_get_result($stmt);
         <?php while ($exam = mysqli_fetch_assoc($exams)): 
             $q_count           = (int)$exam['q_count'];
             $total_marks       = (float)($exam['total_marks'] ?? $q_count);
+            $pool_limit        = (int)($exam['questions_to_display'] ?? 0);
+            if ($pool_limit > 0 && $pool_limit < $q_count) {
+                if ($q_count > 0) {
+                    $total_marks = round(($total_marks / $q_count) * $pool_limit, 1);
+                }
+                $q_count = $pool_limit;
+            }
             $total_marks_disp  = (floor($total_marks) == $total_marks) ? (int)$total_marks : number_format($total_marks, 1);
             $attempt_count     = (int)($exam['attempt_count'] ?? 0);
             $has_attempted     = ($attempt_count > 0);

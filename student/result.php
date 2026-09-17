@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
 
         // Phase 1: check server-side session hasn't been submitted already & validate elapsed time
         $ss = mysqli_prepare($conn,
-            "SELECT es.submitted, es.duration_minutes,
+            "SELECT es.submitted, es.duration_minutes, es.assigned_questions,
                     TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
                     e.end_at,
                     TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
@@ -68,13 +68,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
         mysqli_stmt_close($stmt);
 
         if ($exam) {
-            $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
-            if ($q_stmt) {
-                mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
-                mysqli_stmt_execute($q_stmt);
-                $questions_res = mysqli_stmt_get_result($q_stmt);
+            $questions_to_score = [];
+            $assigned_ids = [];
+            if (!empty($ss_row['assigned_questions'])) {
+                $assigned_ids = array_filter(array_map('intval', explode(',', $ss_row['assigned_questions'])));
+            }
+            if (!empty($assigned_ids)) {
+                $in_clause = implode(',', $assigned_ids);
+                $qs = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$exam_id);
+                $q_map = [];
+                if ($qs) {
+                    while ($row = mysqli_fetch_assoc($qs)) {
+                        $q_map[(int)$row['id']] = $row;
+                    }
+                }
+                foreach ($assigned_ids as $aid) {
+                    if (isset($q_map[$aid])) {
+                        $questions_to_score[] = $q_map[$aid];
+                    }
+                }
             } else {
-                $questions_res = false;
+                $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+                if ($q_stmt) {
+                    mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
+                    mysqli_stmt_execute($q_stmt);
+                    $qr = mysqli_stmt_get_result($q_stmt);
+                    if ($qr) {
+                        while ($row = mysqli_fetch_assoc($qr)) {
+                            $questions_to_score[] = $row;
+                        }
+                    }
+                    mysqli_stmt_close($q_stmt);
+                }
             }
             $total_questions = 0;
             $mcq_count       = 0;
@@ -126,8 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             $earned_mcq_marks = 0;
             $total_exam_marks = 0;
 
-            if ($questions_res) {
-                while ($q = mysqli_fetch_assoc($questions_res)) {
+            if (!empty($questions_to_score)) {
+                foreach ($questions_to_score as $q) {
                     $total_questions++;
                     $q_id   = $q['id'];
                     $q_type = $q['question_type'] ?? 'mcq';
@@ -278,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
     if ($to_exam_id > 0) {
         // 1. Verify session exists, is not already submitted, and fetch timing
         $ts = mysqli_prepare($conn,
-            "SELECT es.submitted, es.duration_minutes,
+            "SELECT es.submitted, es.duration_minutes, es.assigned_questions,
                     TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
                     e.end_at,
                     TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
@@ -295,7 +320,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
             $v_chk = mysqli_prepare($conn,
                 "SELECT COUNT(*) AS v_cnt FROM exam_violations 
                  WHERE student_id = ? AND exam_id = ? 
-                   AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
+                    AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
             mysqli_stmt_bind_param($v_chk, "ii", $student_id, $to_exam_id);
             mysqli_stmt_execute($v_chk);
             $v_res = mysqli_fetch_assoc(mysqli_stmt_get_result($v_chk));
@@ -332,19 +357,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
                 mysqli_stmt_close($df);
 
                 $option_maps = $_SESSION['option_maps_' . $to_exam_id] ?? [];
-                $qs_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
-                $qs_res = false;
-                if ($qs_stmt) {
-                    mysqli_stmt_bind_param($qs_stmt, "i", $to_exam_id);
-                    mysqli_stmt_execute($qs_stmt);
-                    $qs_res = mysqli_stmt_get_result($qs_stmt);
+                $to_questions = [];
+                $to_assigned_ids = [];
+                if (!empty($ts_row['assigned_questions'])) {
+                    $to_assigned_ids = array_filter(array_map('intval', explode(',', $ts_row['assigned_questions'])));
+                }
+                if (!empty($to_assigned_ids)) {
+                    $in_clause = implode(',', $to_assigned_ids);
+                    $qs = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$to_exam_id);
+                    $q_map = [];
+                    if ($qs) {
+                        while ($row = mysqli_fetch_assoc($qs)) {
+                            $q_map[(int)$row['id']] = $row;
+                        }
+                    }
+                    foreach ($to_assigned_ids as $aid) {
+                        if (isset($q_map[$aid])) {
+                            $to_questions[] = $q_map[$aid];
+                        }
+                    }
+                } else {
+                    $qs_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+                    if ($qs_stmt) {
+                        mysqli_stmt_bind_param($qs_stmt, "i", $to_exam_id);
+                        mysqli_stmt_execute($qs_stmt);
+                        $qs_res = mysqli_stmt_get_result($qs_stmt);
+                        if ($qs_res) {
+                            while ($row = mysqli_fetch_assoc($qs_res)) {
+                                $to_questions[] = $row;
+                            }
+                        }
+                        mysqli_stmt_close($qs_stmt);
+                    }
                 }
                 $total_q = $correct_c = $desc_c = $mcq_c = 0;
                 $earned_mcq_marks = 0.0;
                 $total_exam_marks = 0.0;
                 $rec_answers = [];
-                if ($qs_res) {
-                    while ($q = mysqli_fetch_assoc($qs_res)) {
+                if (!empty($to_questions)) {
+                    foreach ($to_questions as $q) {
                     $total_q++;
                     $q_type = $q['question_type'] ?? 'mcq';
                     $q_marks = isset($q['marks']) && (float)$q['marks'] > 0 ? (float)$q['marks'] : ($q_type === 'descriptive' ? 5.0 : 1.0);
@@ -429,7 +480,8 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
     if ($view_result_id > 0) {
         $vr_stmt = mysqli_prepare($conn,
             "SELECT r.*, COALESCE(e.title, 'Examination (Archived)') AS exam_title,
-                    (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
+                    COALESCE(NULLIF((SELECT SUM(COALESCE(q.marks, 1)) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id), 0),
+                             (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id)) AS exam_total_marks
              FROM results r
              LEFT JOIN exams e ON r.exam_id = e.id
              WHERE r.student_id = ? AND r.id = ?
@@ -440,7 +492,8 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
     } else {
         $vr_stmt = mysqli_prepare($conn,
             "SELECT r.*, COALESCE(e.title, 'Examination (Archived)') AS exam_title,
-                    (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
+                    COALESCE(NULLIF((SELECT SUM(COALESCE(q.marks, 1)) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id), 0),
+                             (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id)) AS exam_total_marks
              FROM results r
              LEFT JOIN exams e ON r.exam_id = e.id
              WHERE r.student_id = ? AND r.exam_id = ?
@@ -599,8 +652,10 @@ if (!empty($_SESSION['flash_already_submitted'])) {
 // Fetch all past results for this student with time taken and question count
 $stmt = mysqli_prepare($conn, "SELECT r.*, COALESCE(e.title, 'Examination (Archived)') AS exam_title,
                                 es.time_taken_seconds,
-                                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = r.exam_id) AS q_count,
-                                (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = r.exam_id) AS exam_total_marks
+                                COALESCE(NULLIF((SELECT COUNT(*) FROM student_answers sa WHERE sa.result_id = r.id), 0),
+                                         (SELECT COUNT(*) FROM questions q WHERE q.exam_id = r.exam_id)) AS q_count,
+                                COALESCE(NULLIF((SELECT SUM(COALESCE(q.marks, 1)) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id), 0),
+                                         (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = r.exam_id)) AS exam_total_marks
                                 FROM results r
                                 LEFT JOIN exams e ON r.exam_id = e.id
                                 LEFT JOIN exam_sessions es

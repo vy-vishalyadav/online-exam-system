@@ -64,9 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_exam'])) {
             if ($calc_dur >= 1) {
                 $duration = $calc_dur;
             }
-            $stmt = mysqli_prepare($conn, "INSERT INTO exams (title, duration_minutes, result_mode, start_at, end_at) VALUES (?, ?, ?, ?, ?)");
+            $questions_to_display = max(0, (int)($_POST['questions_to_display'] ?? 0));
+            $stmt = mysqli_prepare($conn, "INSERT INTO exams (title, duration_minutes, result_mode, start_at, end_at, questions_to_display) VALUES (?, ?, ?, ?, ?, ?)");
             if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "sisss", $title, $duration, $result_mode, $start_at, $end_at);
+                mysqli_stmt_bind_param($stmt, "sisssi", $title, $duration, $result_mode, $start_at, $end_at, $questions_to_display);
                 if (mysqli_stmt_execute($stmt)) {
                     $new_exam_id = mysqli_insert_id($conn);
                     mysqli_stmt_close($stmt);
@@ -121,9 +122,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_exam'])) {
             if ($calc_dur >= 1) {
                 $duration = $calc_dur;
             }
-            $stmt = mysqli_prepare($conn, "UPDATE exams SET title=?, duration_minutes=?, result_mode=?, start_at=?, end_at=? WHERE id=?");
+            $questions_to_display = max(0, (int)($_POST['questions_to_display'] ?? 0));
+            $stmt = mysqli_prepare($conn, "UPDATE exams SET title=?, duration_minutes=?, result_mode=?, start_at=?, end_at=?, questions_to_display=? WHERE id=?");
             if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "sisssi", $title, $duration, $result_mode, $start_at, $end_at, $exam_id);
+                mysqli_stmt_bind_param($stmt, "sisssii", $title, $duration, $result_mode, $start_at, $end_at, $questions_to_display, $exam_id);
                 if (mysqli_stmt_execute($stmt)) {
                     mysqli_stmt_close($stmt);
                     // Replace class assignments: delete old, insert new
@@ -271,9 +273,15 @@ if ($exams) {
                             </td>
                             <td>
                                 <a href="manage-questions.php?exam_id=<?php echo $e['id']; ?>" class="text-decoration-none">
-                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
-                                        <i class="bi bi-patch-question me-1"></i><?php echo $e['q_count']; ?> questions
-                                    </span>
+                                    <?php if (!empty($e['questions_to_display']) && (int)$e['questions_to_display'] > 0): ?>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1" title="Anti-Cheat Question Pool: Each student receives <?php echo (int)$e['questions_to_display']; ?> random questions from <?php echo $e['q_count']; ?> total questions in shuffled order">
+                                            <i class="bi bi-shuffle me-1"></i><?php echo (int)$e['questions_to_display']; ?> of <?php echo $e['q_count']; ?> (Pool)
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
+                                            <i class="bi bi-patch-question me-1"></i><?php echo $e['q_count']; ?> questions
+                                        </span>
+                                    <?php endif; ?>
                                 </a>
                                 <?php if ($has_desc): ?>
                                     <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1 ms-1">
@@ -377,6 +385,20 @@ if ($exams) {
                             <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-primary-subtle text-primary fw-bold" id="edit_calc_badge_<?php echo $e['id']; ?>"><?php echo (int)$e['duration_minutes']; ?> mins</span>
                         </div>
                         <hr class="my-3">
+                        <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-shield-lock me-1"></i> QUESTION POOL &amp; ANTI-CHEAT</p>
+                        <div class="mb-2">
+                            <label class="form-label fw-semibold">Questions per Student <span class="badge bg-secondary-subtle text-secondary fw-normal">Optional</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light"><i class="bi bi-shuffle text-primary"></i></span>
+                                <input type="number" name="questions_to_display" class="form-control"
+                                    value="<?php echo ((int)($e['questions_to_display'] ?? 0)) > 0 ? (int)$e['questions_to_display'] : ''; ?>"
+                                    placeholder="e.g. 3 (leave empty or 0 to present all questions)" min="0">
+                            </div>
+                            <div class="form-text">
+                                <i class="bi bi-info-circle me-1"></i>Add extra questions in question bank. Each student receives this many randomly chosen questions in shuffled order without set names (Set A/B/C) to stop peer cheating.
+                            </div>
+                        </div>
+                        <hr class="my-3">
                         <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
                         <div class="d-flex flex-wrap gap-2">
                             <?php foreach ($all_classes as $cl): ?>
@@ -438,6 +460,19 @@ if ($exams) {
                     </div>
                     <div class="mt-2 text-muted small">
                         <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-secondary-subtle text-secondary fw-bold" id="add_calc_badge">-- mins</span>
+                    </div>
+                    <hr class="my-3">
+                    <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-shield-lock me-1"></i> QUESTION POOL &amp; ANTI-CHEAT</p>
+                    <div class="mb-2">
+                        <label class="form-label fw-semibold">Questions per Student <span class="badge bg-secondary-subtle text-secondary fw-normal">Optional</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-shuffle text-primary"></i></span>
+                            <input type="number" name="questions_to_display" id="add_questions_to_display" class="form-control"
+                                placeholder="e.g. 3 (leave empty or 0 to present all questions)" min="0">
+                        </div>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle me-1"></i>Add extra questions in question bank. Each student receives this many randomly chosen questions in shuffled order without set names (Set A/B/C) to stop peer cheating.
+                        </div>
                     </div>
                     <hr class="my-3">
                     <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>

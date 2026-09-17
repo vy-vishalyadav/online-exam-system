@@ -53,8 +53,9 @@ CREATE TABLE IF NOT EXISTS `exams` (
     `title`            VARCHAR(150) NOT NULL,
     `duration_minutes` INT          NOT NULL DEFAULT 30,
     `result_mode`      VARCHAR(20)  NOT NULL DEFAULT 'instant',
-    `start_at`         DATETIME     NULL,
-    `end_at`           DATETIME     NULL
+    `start_at`             DATETIME     NULL,
+    `end_at`               DATETIME     NULL,
+    `questions_to_display` INT          NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ─────────────────────────────────────────────
@@ -130,6 +131,7 @@ CREATE TABLE IF NOT EXISTS `exam_sessions` (
     `started_at`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `duration_minutes`   INT          NOT NULL DEFAULT 30,
     `question_seed`      VARCHAR(64)  NOT NULL DEFAULT '',
+    `assigned_questions` TEXT         NULL,
     `submitted`          TINYINT(1)   NOT NULL DEFAULT 0,
     `time_taken_seconds` INT          NULL,
     UNIQUE KEY `uq_student_exam` (`student_id`, `exam_id`),

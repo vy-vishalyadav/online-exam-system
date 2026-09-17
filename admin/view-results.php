@@ -164,10 +164,11 @@ if ($student_filter > 0) {
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
 $sql = "SELECT r.*, COALESCE(s.name, 'Deleted Student') AS student_name, COALESCE(s.email, '—') AS email, c.name AS class_name,
-         COALESCE(e.title, 'Deleted Exam') AS exam_title,
-         (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS total_q,
-         (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id AND q.question_type = 'descriptive') AS desc_q_count,
-         (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
+         COALESCE(NULLIF((SELECT COUNT(*) FROM student_answers sa WHERE sa.result_id = r.id), 0),
+                  (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id)) AS total_q,
+         (SELECT COUNT(*) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id AND q.question_type = 'descriptive') AS desc_q_count,
+         COALESCE(NULLIF((SELECT SUM(COALESCE(q.marks, 1)) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id), 0),
+                  (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id)) AS exam_total_marks
          FROM results r
          LEFT JOIN students s ON r.student_id = s.id
          LEFT JOIN classes c ON s.class_id = c.id

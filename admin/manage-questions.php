@@ -130,11 +130,15 @@ if (!empty($_SESSION['flash_error'])) {
 $selected_exam_id = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
 
 // Fetch all exams for dropdown filter
-$exams_res = mysqli_query($conn, "SELECT id, title FROM exams ORDER BY title ASC");
+$exams_res = mysqli_query($conn, "SELECT id, title, questions_to_display FROM exams ORDER BY title ASC");
 $all_exams = [];
+$selected_exam_info = null;
 if ($exams_res) {
     while ($e = mysqli_fetch_assoc($exams_res)) {
         $all_exams[] = $e;
+        if ($selected_exam_id && (int)$e['id'] === $selected_exam_id) {
+            $selected_exam_info = $e;
+        }
     }
 }
 
@@ -221,6 +225,29 @@ if ($questions_res && mysqli_num_rows($questions_res) > 0) {
     }
 }
 ?>
+
+<?php if ($selected_exam_info && !empty($selected_exam_info['questions_to_display']) && (int)$selected_exam_info['questions_to_display'] > 0): 
+    $qtd = (int)$selected_exam_info['questions_to_display'];
+    $pool_count = count($questions_list);
+?>
+    <div class="card border-0 bg-primary-subtle text-dark rounded-4 p-3 mb-4 shadow-sm">
+        <div class="d-flex align-items-center gap-3">
+            <div class="bg-primary text-white rounded-circle p-2 d-flex align-items-center justify-content-center shadow-sm flex-shrink-0" style="width:44px; height:44px;">
+                <i class="bi bi-shield-check fs-5"></i>
+            </div>
+            <div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <h6 class="fw-bold mb-0 text-primary">Anti-Cheat Question Pool Active</h6>
+                    <span class="badge bg-primary text-white rounded-pill px-2.5 py-1"><?php echo $qtd; ?> of <?php echo $pool_count; ?> Questions</span>
+                </div>
+                <div class="small text-muted mt-1">
+                    This exam has <strong><?php echo $pool_count; ?></strong> question(s) in its bank. Each student will automatically receive <strong><?php echo $qtd; ?></strong> randomly chosen questions in shuffled order, with no visible "Set A/B/C" badges to prevent peer cheating.
+                </div>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
+
 <!-- Questions List -->
 <?php if (!empty($questions_list)): ?>
     <div class="row g-3">

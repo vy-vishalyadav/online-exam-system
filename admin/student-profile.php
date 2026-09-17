@@ -44,7 +44,8 @@ if (!$student) { safe_redirect("manage-students.php"); }
 $stmt = mysqli_prepare($conn,
     "SELECT r.*, e.title AS exam_title, e.duration_minutes,
             es.time_taken_seconds,
-            (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id) AS exam_total_marks
+            COALESCE(NULLIF((SELECT SUM(COALESCE(q.marks, 1)) FROM student_answers sa JOIN questions q ON sa.question_id = q.id WHERE sa.result_id = r.id), 0),
+                     (SELECT COALESCE(SUM(q.marks), 0) FROM questions q WHERE q.exam_id = e.id)) AS exam_total_marks
      FROM results r
      JOIN exams e ON r.exam_id = e.id
      LEFT JOIN exam_sessions es ON es.student_id = r.student_id AND es.exam_id = r.exam_id
