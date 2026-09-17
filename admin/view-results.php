@@ -332,9 +332,13 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
 
 <!-- Results Table -->
 <div class="card shadow-sm border-0 rounded-4 mb-5">
+    <!-- Top Horizontal Scrollbar Slider -->
+    <div class="table-scroll-top-container d-none" id="resultsTableScrollTop">
+        <div class="table-scroll-top-inner" id="resultsTableScrollTopInner"></div>
+    </div>
     <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table custom-table align-middle mb-0">
+        <div class="table-responsive" id="resultsTableResponsive">
+            <table class="table custom-table table-sticky-actions align-middle mb-0">
                 <thead>
                     <tr>
                         <th class="ps-4">#</th>
@@ -717,5 +721,48 @@ $avg_score      = round($stats['avg_score'] ?? 0, 1);
     }
     </script>
 <?php endif; ?>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const topScroll = document.getElementById('resultsTableScrollTop');
+    const tableCont = document.getElementById('resultsTableResponsive');
+    if (topScroll && tableCont) {
+        const topInner = document.getElementById('resultsTableScrollTopInner');
+        const table = tableCont.querySelector('table');
+
+        function updateScrollWidth() {
+            if (!table) return;
+            const scrollW = table.scrollWidth;
+            const clientW = tableCont.clientWidth;
+            if (scrollW > clientW + 5) {
+                topScroll.classList.remove('d-none');
+                if (topInner) topInner.style.width = scrollW + 'px';
+            } else {
+                topScroll.classList.add('d-none');
+            }
+        }
+
+        let isSyncing = false;
+        topScroll.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                tableCont.scrollLeft = topScroll.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+        tableCont.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                topScroll.scrollLeft = tableCont.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+
+        window.addEventListener('resize', updateScrollWidth);
+        updateScrollWidth();
+        setTimeout(updateScrollWidth, 300);
+    }
+});
+</script>
 
 <?php include '../includes/footer.php'; ?>

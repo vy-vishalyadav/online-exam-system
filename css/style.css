@@ -327,3 +327,56 @@ footer {
     display: none !important;
 }
 
+/* ==========================================================================
+   Table Top Horizontal Scrollbar & Sticky Actions
+   ========================================================================== */
+.table-scroll-top-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 1rem 1rem 0 0;
+}
+
+.table-scroll-top-container::-webkit-scrollbar {
+    height: 9px;
+}
+
+.table-scroll-top-container::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+.table-scroll-top-container::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 6px;
+}
+
+.table-scroll-top-container::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+.table-scroll-top-inner {
+    height: 1px;
+}
+
+/* Sticky Right Actions Column */
+.table-sticky-actions th:last-child,
+.table-sticky-actions td:last-child {
+    position: sticky;
+    right: 0;
+    background-color: #ffffff;
+    box-shadow: -4px 0 8px rgba(15, 23, 42, 0.05);
+    z-index: 2;
+}
+
+.table-sticky-actions thead th:last-child {
+    background-color: #f8fafc !important;
+    z-index: 3;
+}
+
+.table-sticky-actions tbody tr:hover td:last-child {
+    background-color: #f8fafc !important;
+}
+

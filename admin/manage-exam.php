@@ -204,9 +204,13 @@ $exams = mysqli_query($conn, "SELECT e.*,
 <?php endif; ?>
 
 <div class="card shadow-sm border-0 rounded-4">
+    <!-- Top Horizontal Scrollbar Slider -->
+    <div class="table-scroll-top-container d-none" id="examTableScrollTop">
+        <div class="table-scroll-top-inner" id="examTableScrollTopInner"></div>
+    </div>
     <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table custom-table align-middle mb-0">
+        <div class="table-responsive" id="examTableResponsive">
+            <table class="table custom-table table-sticky-actions align-middle mb-0">
                 <thead>
                     <tr>
                         <th class="ps-4">#</th>
@@ -320,24 +324,11 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                                     <input type="hidden" name="edit_exam" value="1">
                                                     <input type="hidden" name="exam_id" value="<?php echo $e['id']; ?>">
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Exam Title</label>
+                                                        <label class="form-label fw-semibold">Exam Title <span class="text-danger">*</span></label>
                                                         <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($e['title']); ?>" required maxlength="200">
                                                     </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Duration (minutes) <span class="text-danger">*</span></label>
-                                                        <input type="number" name="duration_minutes" id="edit_dur_<?php echo $e['id']; ?>" class="form-control edit-dur-input" min="1" max="600" value="<?php echo (int)$e['duration_minutes']; ?>" required>
-                                                        <div class="form-text">Auto-syncs with Opens At and Closes At</div>
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label fw-semibold">Result Release Mode</label>
-                                                        <select name="result_mode" class="form-select">
-                                                            <option value="instant" <?php echo ($mode === 'instant') ? 'selected' : ''; ?>>Instant Result (Auto-release score on submit)</option>
-                                                            <option value="pending" <?php echo ($mode === 'pending') ? 'selected' : ''; ?>>Pending Review (Hold score for instructor review)</option>
-                                                        </select>
-                                                        <div class="form-text text-muted">
-                                                            <i class="bi bi-info-circle me-1"></i> If this exam has descriptive questions, results will automatically be held for review.
-                                                        </div>
-                                                    </div>
+                                                    <input type="hidden" name="duration_minutes" id="edit_dur_<?php echo $e['id']; ?>" value="<?php echo (int)$e['duration_minutes']; ?>">
+                                                    <input type="hidden" name="result_mode" value="<?php echo htmlspecialchars($mode); ?>">
                                                     <hr class="my-3">
                                                     <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
                                                     <div class="row g-3">
@@ -353,6 +344,9 @@ $exams = mysqli_query($conn, "SELECT e.*,
                                                                 value="<?php echo $e['end_at'] ? date('Y-m-d\TH:i', strtotime($e['end_at'])) : ''; ?>" required>
                                                             <div class="form-text">Strict synchronized deadline for all students</div>
                                                         </div>
+                                                    </div>
+                                                    <div class="mt-2 text-muted small">
+                                                        <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-primary-subtle text-primary fw-bold" id="edit_calc_badge_<?php echo $e['id']; ?>"><?php echo (int)$e['duration_minutes']; ?> mins</span>
                                                     </div>
                                                     <hr class="my-3">
                                                     <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
@@ -411,24 +405,11 @@ $exams = mysqli_query($conn, "SELECT e.*,
                 <div class="modal-body p-4">
                     <input type="hidden" name="add_exam" value="1">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Exam Title</label>
+                        <label class="form-label fw-semibold">Exam Title <span class="text-danger">*</span></label>
                         <input type="text" name="title" class="form-control" placeholder="e.g. Science &amp; Technology Quiz" required maxlength="200">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Duration (minutes) <span class="text-danger">*</span></label>
-                        <input type="number" name="duration_minutes" id="add_duration" class="form-control" min="1" max="600" value="30" required>
-                        <div class="form-text">Auto-syncs with Opens At and Closes At</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Result Release Mode</label>
-                        <select name="result_mode" class="form-select">
-                            <option value="instant" selected>Instant Result (Auto-release score on submit)</option>
-                            <option value="pending">Pending Review (Hold score for instructor review)</option>
-                        </select>
-                        <div class="form-text text-muted">
-                            <i class="bi bi-info-circle me-1"></i> If descriptive questions are added, results will automatically be set to Pending Review.
-                        </div>
-                    </div>
+                    <input type="hidden" name="duration_minutes" id="add_duration" value="30">
+                    <input type="hidden" name="result_mode" value="instant">
                     <hr class="my-3">
                     <p class="fw-semibold mb-2 text-primary small"><i class="bi bi-calendar-check me-1"></i> EXAM SCHEDULE (Strict College Window)</p>
                     <div class="row g-3">
@@ -442,6 +423,9 @@ $exams = mysqli_query($conn, "SELECT e.*,
                             <input type="datetime-local" name="end_at" id="add_end_at" class="form-control" required>
                             <div class="form-text">Strict synchronized deadline for all students</div>
                         </div>
+                    </div>
+                    <div class="mt-2 text-muted small">
+                        <i class="bi bi-clock-history me-1 text-primary"></i> Calculated Duration: <span class="badge bg-primary-subtle text-primary fw-bold" id="add_calc_badge">-- mins</span>
                     </div>
                     <hr class="my-3">
                     <p class="fw-semibold mb-2 text-muted small"><i class="bi bi-people me-1"></i> ASSIGN TO CLASSES</p>
@@ -469,71 +453,101 @@ $exams = mysqli_query($conn, "SELECT e.*,
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    const startIn = document.getElementById('add_start_at');
-    const endIn   = document.getElementById('add_end_at');
-    const durIn   = document.getElementById('add_duration');
+    // ── Table Top Horizontal Scrollbar Sync ──
+    const topScroll = document.getElementById('examTableScrollTop');
+    const tableCont = document.getElementById('examTableResponsive');
+    if (topScroll && tableCont) {
+        const topInner = document.getElementById('examTableScrollTopInner');
+        const table = tableCont.querySelector('table');
 
-    function syncSchedule() {
-        if (!startIn || !endIn || !durIn) return;
-        if (startIn.value && durIn.value) {
-            const startDate = new Date(startIn.value);
-            if (!isNaN(startDate.getTime())) {
-                const durationMs = parseInt(durIn.value, 10) * 60 * 1000;
-                const endDate = new Date(startDate.getTime() + durationMs);
-                const offset = endDate.getTimezoneOffset() * 60000;
-                const localISOTime = (new Date(endDate.getTime() - offset)).toISOString().slice(0, 16);
-                endIn.value = localISOTime;
+        function updateScrollWidth() {
+            if (!table) return;
+            const scrollW = table.scrollWidth;
+            const clientW = tableCont.clientWidth;
+            if (scrollW > clientW + 5) {
+                topScroll.classList.remove('d-none');
+                if (topInner) topInner.style.width = scrollW + 'px';
+            } else {
+                topScroll.classList.add('d-none');
             }
         }
-    }
 
-    if (startIn) startIn.addEventListener('change', syncSchedule);
-    if (durIn)   durIn.addEventListener('input', syncSchedule);
-    if (endIn) {
-        endIn.addEventListener('change', function() {
-            if (startIn.value && endIn.value) {
-                const s = new Date(startIn.value);
-                const e = new Date(endIn.value);
-                if (e > s) {
-                    const diffMins = Math.round((e - s) / 60000);
-                    if (durIn) durIn.value = diffMins;
-                }
+        let isSyncing = false;
+        topScroll.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                tableCont.scrollLeft = topScroll.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
             }
         });
+        tableCont.addEventListener('scroll', function() {
+            if (!isSyncing) {
+                isSyncing = true;
+                topScroll.scrollLeft = tableCont.scrollLeft;
+                requestAnimationFrame(function() { isSyncing = false; });
+            }
+        });
+
+        window.addEventListener('resize', updateScrollWidth);
+        updateScrollWidth();
+        setTimeout(updateScrollWidth, 300);
     }
 
-    // Sync schedule for all edit modals
-    document.querySelectorAll('.edit-start-input').forEach(function(startIn) {
-        const id = startIn.dataset.examId;
-        const endIn = document.getElementById('edit_end_' + id);
-        const durIn = document.getElementById('edit_dur_' + id);
+    // ── Add Exam Duration Auto-Calculation ──
+    const startIn   = document.getElementById('add_start_at');
+    const endIn     = document.getElementById('add_end_at');
+    const durIn     = document.getElementById('add_duration');
+    const addBadge  = document.getElementById('add_calc_badge');
 
-        function syncEdit() {
-            if (!startIn || !endIn || !durIn) return;
-            if (startIn.value && durIn.value) {
-                const startDate = new Date(startIn.value);
-                if (!isNaN(startDate.getTime())) {
-                    const durationMs = parseInt(durIn.value, 10) * 60 * 1000;
-                    const endDate = new Date(startDate.getTime() + durationMs);
-                    const offset = endDate.getTimezoneOffset() * 60000;
-                    endIn.value = (new Date(endDate.getTime() - offset)).toISOString().slice(0, 16);
+    function updateAddDuration() {
+        if (!startIn || !endIn) return;
+        if (startIn.value && endIn.value) {
+            const s = new Date(startIn.value);
+            const e = new Date(endIn.value);
+            if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+                const diffMins = Math.round((e - s) / 60000);
+                if (diffMins > 0) {
+                    if (durIn) durIn.value = diffMins;
+                    if (addBadge) addBadge.textContent = diffMins + ' mins';
+                } else {
+                    if (addBadge) addBadge.textContent = 'Closes At must be after Opens At';
+                }
+            }
+        } else if (durIn && addBadge) {
+            addBadge.textContent = (durIn.value || 30) + ' mins';
+        }
+    }
+
+    if (startIn) startIn.addEventListener('change', updateAddDuration);
+    if (endIn)   endIn.addEventListener('change', updateAddDuration);
+    updateAddDuration();
+
+    // ── Edit Exam Duration Auto-Calculation ──
+    document.querySelectorAll('.edit-start-input').forEach(function(startEl) {
+        const id = startEl.dataset.examId;
+        const endEl   = document.getElementById('edit_end_' + id);
+        const durEl   = document.getElementById('edit_dur_' + id);
+        const badgeEl = document.getElementById('edit_calc_badge_' + id);
+
+        function updateEditDuration() {
+            if (!startEl || !endEl) return;
+            if (startEl.value && endEl.value) {
+                const s = new Date(startEl.value);
+                const e = new Date(endEl.value);
+                if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+                    const diffMins = Math.round((e - s) / 60000);
+                    if (diffMins > 0) {
+                        if (durEl) durEl.value = diffMins;
+                        if (badgeEl) badgeEl.textContent = diffMins + ' mins';
+                    } else {
+                        if (badgeEl) badgeEl.textContent = 'Invalid duration';
+                    }
                 }
             }
         }
 
-        startIn.addEventListener('change', syncEdit);
-        if (durIn) durIn.addEventListener('input', syncEdit);
-        if (endIn) {
-            endIn.addEventListener('change', function() {
-                if (startIn.value && endIn.value) {
-                    const s = new Date(startIn.value);
-                    const e = new Date(endIn.value);
-                    if (e > s) {
-                        durIn.value = Math.round((e - s) / 60000);
-                    }
-                }
-            });
-        }
+        startEl.addEventListener('change', updateEditDuration);
+        if (endEl) endEl.addEventListener('change', updateEditDuration);
     });
 
     <?php if (isset($_GET['action']) && $_GET['action'] === 'new'): ?>
