@@ -191,13 +191,13 @@ ON DUPLICATE KEY UPDATE `description` = VALUES(`description`), `sort_order` = VA
 
 -- 3. Sample Students (Password: student)
 INSERT INTO `students` (`id`, `name`, `email`, `password`, `class_id`) VALUES
-    (1, 'John Doe',     '10001@rclasses.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 1),
-    (2, 'Jane Smith',   '10002@rclasses.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 2),
-    (3, 'Demo Student', '10003@rclasses.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 3),
-    (4, 'Alex Turner',  '10004@rclasses.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 1),
-    (5, 'Priya Sharma', '10005@rclasses.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 2),
-    (6, 'Rahul Verma',  '10006@rclasses.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 3)
-ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `class_id` = VALUES(`class_id`);
+    (1, 'John Doe',     '10001@fyit.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 1),
+    (2, 'Jane Smith',   '10002@syit.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 2),
+    (3, 'Demo Student', '10003@tyit.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 3),
+    (4, 'Alex Turner',  '10004@fyit.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 1),
+    (5, 'Priya Sharma', '10005@syit.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 2),
+    (6, 'Rahul Verma',  '10006@tyit.com', '$2y$10$0c2AG/wWtuQK3tOH9yjSrOQwo39tEEVhvJanencPZKxVD5HsAQvNK', 3)
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `email` = VALUES(`email`), `class_id` = VALUES(`class_id`);
 
 -- 4. Sample Scheduled Exams
 INSERT INTO `exams` (`id`, `title`, `duration_minutes`, `result_mode`, `start_at`, `end_at`) VALUES

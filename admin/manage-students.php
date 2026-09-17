@@ -42,29 +42,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) { $error = "Invalid request."; }
     else {
         $name     = trim($_POST['name'] ?? '');
-        $class_id = (int)($_POST['class_id'] ?? 0) ?: null;
+        $class_id = (int)($_POST['class_id'] ?? 0);
 
-        if (empty($name))           { $error = "Student name is required."; }
-        elseif (strlen($name) > 150){ $error = "Name too long (max 150 chars)."; }
+        if (empty($name))            { $error = "Student name is required."; }
+        elseif (strlen($name) > 150) { $error = "Name too long (max 150 chars)."; }
+        elseif ($class_id <= 0)      { $error = "Class is required. Please select a class."; }
         else {
-            // Generate next 5-digit student ID
-            $res = mysqli_query($conn,
-                "SELECT MAX(CAST(SUBSTRING_INDEX(email, '@', 1) AS UNSIGNED)) AS max_num
-                 FROM students WHERE email REGEXP '^[0-9]+@rclasses\\.com$'");
-            $row      = $res ? mysqli_fetch_assoc($res) : null;
-            $next_num = max(10001, (int)($row['max_num'] ?? 10000) + 1);
-            $login_id = $next_num . "@rclasses.com";
+            // Fetch class details to format domain
+            $cls_stmt = mysqli_prepare($conn, "SELECT name FROM classes WHERE id = ? LIMIT 1");
+            mysqli_stmt_bind_param($cls_stmt, "i", $class_id);
+            mysqli_stmt_execute($cls_stmt);
+            $cls_res = mysqli_stmt_get_result($cls_stmt);
+            $cls_row = $cls_res ? mysqli_fetch_assoc($cls_res) : null;
+            mysqli_stmt_close($cls_stmt);
 
-            $hashed_pw = password_hash('student', PASSWORD_DEFAULT);
-            $stmt = mysqli_prepare($conn, "INSERT INTO students (name, class_id, email, password) VALUES (?,?,?,?)");
-            mysqli_stmt_bind_param($stmt, "siss", $name, $class_id, $login_id, $hashed_pw);
-            if (mysqli_stmt_execute($stmt)) {
-                $_SESSION['flash_success'] = "Student <strong>" . htmlspecialchars($name, ENT_QUOTES) . "</strong> registered! &nbsp;|&nbsp; Login ID: <strong class='text-primary'>{$login_id}</strong> &nbsp;|&nbsp; Password: <strong>student</strong>";
-                header("Location: manage-students.php"); exit;
+            if (!$cls_row) {
+                $error = "The selected class does not exist.";
             } else {
-                $error = mysqli_errno($conn) === 1062 ? "ID conflict, please try again." : "Error: " . mysqli_error($conn);
+                // Class name to domain suffix: e.g. "TYIT" -> "tyit.com"
+                $clean_class = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $cls_row['name']));
+                if (empty($clean_class)) {
+                    $clean_class = 'class' . $class_id;
+                }
+                $domain = $clean_class . '.com';
+
+                // Find highest existing 5-digit ID for this class domain
+                $esc_domain = mysqli_real_escape_string($conn, $domain);
+                $res = mysqli_query($conn,
+                    "SELECT MAX(CAST(SUBSTRING_INDEX(email, '@', 1) AS UNSIGNED)) AS max_num
+                     FROM students WHERE email LIKE '%@" . $esc_domain . "' AND email REGEXP '^[0-9]+@'");
+                $row      = $res ? mysqli_fetch_assoc($res) : null;
+                $next_num = max(10001, (int)($row['max_num'] ?? 10000) + 1);
+                $login_id = $next_num . "@" . $domain;
+
+                // Ensure unique ID across all students
+                while (true) {
+                    $chk = mysqli_prepare($conn, "SELECT id FROM students WHERE email = ? LIMIT 1");
+                    mysqli_stmt_bind_param($chk, "s", $login_id);
+                    mysqli_stmt_execute($chk);
+                    mysqli_stmt_store_result($chk);
+                    $exists = mysqli_stmt_num_rows($chk) > 0;
+                    mysqli_stmt_close($chk);
+                    if (!$exists) break;
+                    $next_num++;
+                    $login_id = $next_num . "@" . $domain;
+                }
+
+                $hashed_pw = password_hash('student', PASSWORD_DEFAULT);
+                $stmt = mysqli_prepare($conn, "INSERT INTO students (name, class_id, email, password) VALUES (?,?,?,?)");
+                mysqli_stmt_bind_param($stmt, "siss", $name, $class_id, $login_id, $hashed_pw);
+                if (mysqli_stmt_execute($stmt)) {
+                    $_SESSION['flash_success'] = "Student <strong>" . htmlspecialchars($name, ENT_QUOTES) . "</strong> registered! &nbsp;|&nbsp; Login ID: <strong class='text-primary'>{$login_id}</strong> &nbsp;|&nbsp; Password: <strong>student</strong>";
+                    header("Location: manage-students.php"); exit;
+                } else {
+                    $error = mysqli_errno($conn) === 1062 ? "ID conflict, please try again." : "Error: " . mysqli_error($conn);
+                }
+                mysqli_stmt_close($stmt);
             }
-            mysqli_stmt_close($stmt);
         }
     }
 }
@@ -76,10 +110,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
         $id       = (int)($_POST['student_id'] ?? 0);
         $name     = trim($_POST['name'] ?? '');
         $email    = trim($_POST['email'] ?? '');
-        $class_id = (int)($_POST['class_id'] ?? 0) ?: null;
+        $class_id = (int)($_POST['class_id'] ?? 0);
 
-        if (empty($name) || empty($email)) { $error = "Name and Student ID are required."; }
-        else {
+        if (empty($name) || empty($email)) { 
+            $error = "Name and Student ID are required."; 
+        } elseif ($class_id <= 0) {
+            $error = "Class is required. Please select a valid class.";
+        } else {
             // Check duplicate email (excluding this student)
             $chk = mysqli_prepare($conn, "SELECT id FROM students WHERE email=? AND id!=? LIMIT 1");
             mysqli_stmt_bind_param($chk, "si", $email, $id);
@@ -182,7 +219,6 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                             <?php echo htmlspecialchars($c['name']); ?>
                         </option>
                         <?php endforeach; ?>
-                        <option value="-1" <?php echo ($filter_class == -1) ? 'selected' : ''; ?>>No Class Assigned</option>
                     </select>
                 </div>
             </div>
@@ -205,7 +241,6 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                     <?php echo htmlspecialchars($c['name']); ?>
                 </button>
                 <?php endforeach; ?>
-                <button type="button" class="btn btn-outline-secondary" data-class-id="-1" onclick="filterClass(-1)">No Class</button>
             </div>
         </div>
     </div>
@@ -295,9 +330,9 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
                                                 <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($s['name']); ?>" required maxlength="150">
                                             </div>
                                             <div class="mb-3">
-                                                <label class="form-label fw-semibold">Class</label>
-                                                <select name="class_id" class="form-select">
-                                                    <option value="">No Class Assigned</option>
+                                                <label class="form-label fw-semibold">Class <span class="text-danger">*</span></label>
+                                                <select name="class_id" class="form-select" required>
+                                                    <option value="" disabled>-- Select a Class --</option>
                                                     <?php foreach ($classes as $c): ?>
                                                     <option value="<?php echo $c['id']; ?>" <?php echo ($s['class_id'] == $c['id']) ? 'selected' : ''; ?>>
                                                         <?php echo htmlspecialchars($c['name']); ?> — <?php echo htmlspecialchars($c['description'] ?? ''); ?>
@@ -351,25 +386,37 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
             <input type="hidden" name="add_student" value="1">
             <div class="modal-header bg-primary text-white"><h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Add New Student</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
             <div class="modal-body p-4">
-                <div class="mb-4">
-                    <label class="form-label fw-bold">Student Full Name</label>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Student Full Name <span class="text-danger">*</span></label>
                     <div class="input-group input-group-lg">
                         <span class="input-group-text bg-light"><i class="bi bi-person text-muted"></i></span>
                         <input type="text" name="name" class="form-control" placeholder="e.g. Rahul Sharma" required autofocus maxlength="150">
                     </div>
-                    <div class="form-text text-muted mt-2">
-                        <i class="bi bi-info-circle text-primary me-1"></i>
-                        A unique 5-digit permanent ID (e.g. <code>10001@rclasses.com</code>) is auto-created with default password <code>student</code>.
-                    </div>
                 </div>
-                <div class="mb-0">
-                    <label class="form-label fw-bold">Class</label>
-                    <select name="class_id" class="form-select">
-                        <option value="">No Class Assigned</option>
-                        <?php foreach ($classes as $c): ?>
-                        <option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?> — <?php echo htmlspecialchars($c['description'] ?? ''); ?></option>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Class <span class="text-danger">*</span></label>
+                    <select name="class_id" id="addStudentClassSelect" class="form-select form-select-lg" required onchange="updateIdPreview(this)">
+                        <option value="" disabled selected>-- Select a Class (Required) --</option>
+                        <?php foreach ($classes as $c): 
+                            $class_domain = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $c['name'])) . '.com';
+                        ?>
+                        <option value="<?php echo $c['id']; ?>" data-domain="<?php echo htmlspecialchars($class_domain); ?>">
+                            <?php echo htmlspecialchars($c['name']); ?> — <?php echo htmlspecialchars($c['description'] ?? ''); ?>
+                        </option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="p-3 bg-light rounded-3 border">
+                    <div class="d-flex align-items-center mb-1 text-dark fw-bold small">
+                        <i class="bi bi-person-badge text-primary me-2 fs-6"></i>
+                        Auto-Generated Login ID:
+                    </div>
+                    <div class="font-monospace text-primary fw-bold fs-6 ps-4">
+                        <span>10001</span><span id="idPreviewSuffix" class="text-muted">@[class].com</span>
+                    </div>
+                    <small class="text-muted d-block ps-4 mt-1">
+                        <i class="bi bi-info-circle me-1"></i> A unique ID formatted as <code>uniquid@[class].com</code> (e.g. <code>10001@tyit.com</code>) is created automatically with default password <code>student</code>.
+                    </small>
                 </div>
             </div>
             <div class="modal-footer bg-light">
@@ -384,6 +431,21 @@ while ($row = mysqli_fetch_assoc($students_res)) $students[] = $row;
 let currentClassFilter = <?php echo (int)$filter_class; ?>;
 let currentSearchTerm  = <?php echo json_encode($search); ?>.toLowerCase().trim();
 
+function updateIdPreview(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const domain = opt ? opt.dataset.domain : '';
+    const suffixEl = document.getElementById('idPreviewSuffix');
+    if (suffixEl) {
+        if (domain) {
+            suffixEl.textContent = '@' + domain;
+            suffixEl.className = 'text-primary fw-bold';
+        } else {
+            suffixEl.textContent = '@[class].com';
+            suffixEl.className = 'text-muted';
+        }
+    }
+}
+
 function applyFilters() {
     const term = currentSearchTerm;
     const classId = currentClassFilter;
@@ -395,7 +457,7 @@ function applyFilters() {
         const name = (row.dataset.name || '').toLowerCase();
         const email = (row.dataset.email || '').toLowerCase();
 
-        const matchesClass = (classId === 0) || (classId === -1 && cid === 0) || (classId > 0 && cid === classId);
+        const matchesClass = (classId === 0) || (cid === classId);
         const matchesSearch = !term || name.includes(term) || email.includes(term);
 
         if (matchesClass && matchesSearch) {

@@ -269,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_locked_out) {
                             <label class="form-label fw-semibold text-secondary">Student ID</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light"><i class="bi bi-person-badge text-muted"></i></span>
-                                <input type="text" name="email" class="form-control" placeholder="e.g. 1001@rclasses.com" required>
+                                <input type="text" name="email" class="form-control" placeholder="e.g. 10001@tyit.com" required>
                             </div>
                         </div>
                         <div class="mb-4">
