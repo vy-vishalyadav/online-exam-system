@@ -140,29 +140,29 @@ if (!empty($search)) {
     $like_val = "%" . $escaped_search . "%";
     $where_clauses[] = "(s.name LIKE ? OR s.email LIKE ? OR e.title LIKE ?)";
     $bind_types .= "sss";
-    $bind_params[] = &$like_val;
-    $bind_params[] = &$like_val;
-    $bind_params[] = &$like_val;
+    $bind_params[] = $like_val;
+    $bind_params[] = $like_val;
+    $bind_params[] = $like_val;
 }
 if (!empty($status_filter) && in_array($status_filter, ['pending', 'published'])) {
     $where_clauses[] = "r.status = ?";
     $bind_types .= "s";
-    $bind_params[] = &$status_filter;
+    $bind_params[] = $status_filter;
 }
 if ($class_filter > 0) {
     $where_clauses[] = "s.class_id = ?";
     $bind_types .= "i";
-    $bind_params[] = &$class_filter;
+    $bind_params[] = $class_filter;
 }
 if ($exam_filter > 0) {
     $where_clauses[] = "r.exam_id = ?";
     $bind_types .= "i";
-    $bind_params[] = &$exam_filter;
+    $bind_params[] = $exam_filter;
 }
 if ($student_filter > 0) {
     $where_clauses[] = "r.student_id = ?";
     $bind_types .= "i";
-    $bind_params[] = &$student_filter;
+    $bind_params[] = $student_filter;
 }
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
@@ -182,9 +182,8 @@ $results_list = [];
 $result_ids   = [];
 
 if ($stmt_results) {
-    if (!empty($bind_types)) {
-        array_unshift($bind_params, $bind_types);
-        call_user_func_array(['mysqli_stmt', 'bind_param'], array_merge([$stmt_results], $bind_params));
+    if (!empty($bind_types) && !empty($bind_params)) {
+        mysqli_stmt_bind_param($stmt_results, $bind_types, ...$bind_params);
     }
     mysqli_stmt_execute($stmt_results);
     $res = mysqli_stmt_get_result($stmt_results);
