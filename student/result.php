@@ -221,13 +221,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             }
 
             // Score is raw marks awarded (descriptive evaluated later by instructor)
-            $final_marks = round($earned_mcq_marks);
+            $final_marks = round((float)$earned_mcq_marks, 2);
 
             // Save result
             $result_id = 0;
             $stmt = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
             if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "iiis", $student_id, $exam_id, $final_marks, $status);
+                mysqli_stmt_bind_param($stmt, "iids", $student_id, $exam_id, $final_marks, $status);
                 if (mysqli_stmt_execute($stmt)) {
                     $result_id = (int)mysqli_insert_id($conn);
                 }
@@ -425,10 +425,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
 
                 $status_to = ($desc_c > 0 || ($to_exam['result_mode'] ?? 'instant') === 'pending') ? 'pending' : 'published';
                 // Score is raw marks awarded (descriptive evaluated later by instructor), matching POST handler at line 174
-                $score_to  = (int)round($earned_mcq_marks);
+                $score_to  = round((float)$earned_mcq_marks, 2);
 
                 $ins_r = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?,?,?,?,NOW())");
-                mysqli_stmt_bind_param($ins_r, "iiis", $student_id, $to_exam_id, $score_to, $status_to);
+                mysqli_stmt_bind_param($ins_r, "iids", $student_id, $to_exam_id, $score_to, $status_to);
                 $new_rid = 0;
                 if (mysqli_stmt_execute($ins_r)) { $new_rid = (int)mysqli_insert_id($conn); }
                 mysqli_stmt_close($ins_r);
@@ -630,7 +630,7 @@ if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_
                 'mcq_count'       => $mcq_count,
                 'correct'         => $view_correct,
                 'wrong'           => $wrong_count,
-                'score'           => (int)$vr['score'],
+                'score'           => (float)$vr['score'],
                 'items'           => $view_items,
                 'is_historical'   => true,
             ];
@@ -774,7 +774,7 @@ mysqli_stmt_close($stmt);
                         <div class="bg-primary-subtle p-3 rounded-4 border border-primary-subtle">
                             <small class="text-muted fw-semibold">Marks Awarded</small>
                             <h2 class="fw-extrabold text-primary mb-0">
-                                <?php echo $submission_review['score']; ?>
+                                <?php echo rtrim(rtrim(number_format((float)$submission_review['score'], 2), '0'), '.'); ?>
                                 <?php if (!empty($submission_review['total_marks']) && $submission_review['total_marks'] > 0): ?>
                                     <small class="fs-6 text-muted">/ <?php echo rtrim(rtrim(number_format($submission_review['total_marks'], 2), '0'), '.'); ?> marks</small>
                                 <?php else: ?>
@@ -856,15 +856,23 @@ mysqli_stmt_close($stmt);
                                     <span class="badge bg-light text-dark border">Descriptive</span>
                                 </div>
                                 <div class="p-3 bg-light rounded-3 border mb-2">
-                                    <small class="text-muted fw-bold d-block mb-1">Your Written Response:</small>
-                                    <div class="font-monospace text-dark" style="white-space: pre-wrap; font-size: 0.95rem;">
-                                        <?php echo !empty($d_item['user_ans']) ? htmlspecialchars($d_item['user_ans']) : '<em class="text-muted">No answer submitted.</em>'; ?>
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <small class="text-muted fw-bold"><i class="bi bi-pencil-square me-1"></i>Your Written Response:</small>
+                                        <?php if (!empty($d_item['user_ans'])): 
+                                            $stu_words = str_word_count(strip_tags((string)$d_item['user_ans']));
+                                            $stu_chars = mb_strlen((string)$d_item['user_ans']);
+                                        ?>
+                                            <span class="badge bg-white text-muted border px-2 py-1 small">
+                                                <?php echo $stu_words; ?> words &bull; <?php echo $stu_chars; ?> chars
+                                            </span>
+                                        <?php endif; ?>
                                     </div>
+                                    <div class="p-3 bg-white rounded-2 border text-dark fs-6" style="white-space: pre-wrap; line-height: 1.65; min-height: 50px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><?php echo !empty($d_item['user_ans']) ? htmlspecialchars($d_item['user_ans']) : '<em class="text-muted">No answer submitted.</em>'; ?></div>
                                 </div>
                                 <?php if ($d_marks !== null && $d_marks !== ''): ?>
                                     <div class="d-flex align-items-center gap-2">
                                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
-                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo htmlspecialchars((string)$d_marks); ?> marks
+                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo rtrim(rtrim(number_format((float)$d_marks, 2), '0'), '.'); ?> marks
                                         </span>
                                     </div>
                                 <?php endif; ?>
@@ -1006,7 +1014,7 @@ mysqli_stmt_close($stmt);
                                     </span>
                                 <?php else: ?>
                                     <span class="fw-bold fs-6 text-primary">
-                                        <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                        <?php echo rtrim(rtrim(number_format((float)$r['score'], 2), '0'), '.'); ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                     </span>
                                 <?php endif; ?>
                             </td>

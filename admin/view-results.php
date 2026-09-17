@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if (strlen($admin_feedback) > 2000) $admin_feedback = substr($admin_feedback, 0, 2000);
         $final_score = isset($_POST['final_score']) ? (float)$_POST['final_score'] : 0;
         if ($final_score < 0) $final_score = 0;
-        $final_score = round($final_score);
+        $final_score = round($final_score, 2);
 
         // Update descriptive marks if submitted
         if (!empty($_POST['marks']) && is_array($_POST['marks'])) {
@@ -80,10 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Update results record using prepared statement
+        // Update results record using prepared statement (double precision for score)
         $stmt = mysqli_prepare($conn, "UPDATE results SET score=?, status=?, admin_feedback=?, evaluated_at=NOW() WHERE id=?");
         if ($stmt) {
-            mysqli_stmt_bind_param($stmt, "issi", $final_score, $new_status, $admin_feedback, $result_id);
+            mysqli_stmt_bind_param($stmt, "dssi", $final_score, $new_status, $admin_feedback, $result_id);
             if (mysqli_stmt_execute($stmt)) {
                 mysqli_stmt_close($stmt);
                 $_SESSION['flash_success'] = "Result #$result_id evaluated and published successfully to the student!";
@@ -381,16 +381,18 @@ $published_count = $stats['published_count'] ?? 0;
                             </td>
                             <td>
                                 <?php 
+                                $score_val = (float)($r['score'] ?? 0);
+                                $score_disp = rtrim(rtrim(number_format($score_val, 2), '0'), '.');
                                 $out_of = (float)($r['exam_total_marks'] ?? 0);
                                 $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
                                 ?>
                                 <?php if ($is_pending): ?>
                                     <span class="badge bg-warning-subtle text-warning border border-warning-subtle fw-bold">
-                                        Draft: <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                        Draft: <?php echo $score_disp; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                     </span>
                                 <?php else: ?>
                                     <span class="fw-bold fs-6 text-primary">
-                                        <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                        <?php echo $score_disp; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                     </span>
                                 <?php endif; ?>
                             </td>
@@ -520,27 +522,37 @@ $published_count = $stats['published_count'] ?? 0;
 
                                     <?php foreach ($desc_items as $d_idx => $d_item): 
                                         $aid          = $d_item['id'];
-                                        $current_marks = $d_item['marks_awarded'] ?? 0;
+                                        $current_marks = (float)($d_item['marks_awarded'] ?? 0);
+                                        $current_marks_disp = rtrim(rtrim(number_format($current_marks, 2), '0'), '.');
                                         $max_marks    = isset($d_item['question_marks']) && (float)$d_item['question_marks'] > 0
                                                         ? (float)$d_item['question_marks'] : 5;
+                                        $max_marks_disp = rtrim(rtrim(number_format($max_marks, 2), '0'), '.');
                                         $half_marks   = round($max_marks / 2, 2);
+                                        $half_marks_disp = rtrim(rtrim(number_format($half_marks, 2), '0'), '.');
+
+                                        $ans_raw  = trim($d_item['user_answer'] ?? '');
+                                        $char_cnt = mb_strlen($ans_raw);
+                                        $word_cnt = !empty($ans_raw) ? count(preg_split('/\s+/', $ans_raw)) : 0;
                                     ?>
                                         <div class="card mb-3 border rounded-3 p-3 bg-white shadow-sm">
                                              <div class="d-flex justify-content-between align-items-start mb-2">
                                                  <span class="fw-bold text-dark">Q: <?php echo htmlspecialchars($d_item['question_text']); ?></span>
-                                                 <span class="badge bg-light text-dark border">Descriptive (Max <?php echo $max_marks; ?> marks)</span>
+                                                 <span class="badge bg-light text-dark border">Descriptive (Max <?php echo $max_marks_disp; ?> marks)</span>
                                              </div>
 
-                                             <div class="p-3 bg-light rounded-3 border mb-3">
-                                                 <small class="text-muted fw-bold d-block mb-1">Student's Written Response:</small>
-                                                 <div class="font-monospace text-dark" style="white-space: pre-wrap; font-size: 0.95rem;">
-                                                     <?php echo !empty($d_item['user_answer']) ? htmlspecialchars($d_item['user_answer']) : '<em class="text-muted">No answer written by student.</em>'; ?>
+                                             <div class="mb-3">
+                                                 <div class="d-flex justify-content-between align-items-center mb-1">
+                                                     <small class="text-muted fw-bold"><i class="bi bi-pencil-square text-primary me-1"></i> Student's Written Response:</small>
+                                                     <?php if ($char_cnt > 0): ?>
+                                                         <span class="badge bg-light text-muted border small"><?php echo $word_cnt; ?> words &bull; <?php echo $char_cnt; ?> chars</span>
+                                                     <?php endif; ?>
                                                  </div>
+                                                 <div class="p-3 bg-white rounded-3 border text-dark shadow-sm student-answer-view" style="white-space: pre-wrap; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 1rem; line-height: 1.7; min-height: 70px;"><?php echo !empty($ans_raw) ? htmlspecialchars($ans_raw, ENT_QUOTES, 'UTF-8') : '<em class="text-muted">No answer written by student.</em>'; ?></div>
                                              </div>
 
                                              <div class="row align-items-center g-2">
                                                  <div class="col-auto">
-                                                     <label class="form-label fw-bold mb-0 text-primary small">Marks Awarded (0 to <?php echo $max_marks; ?>):</label>
+                                                     <label class="form-label fw-bold mb-0 text-primary small">Marks Awarded (0 to <?php echo $max_marks_disp; ?>):</label>
                                                  </div>
                                                  <div class="col-auto">
                                                      <input type="number" 
@@ -549,14 +561,14 @@ $published_count = $stats['published_count'] ?? 0;
                                                             class="form-control form-control-sm desc-mark-input-<?php echo $rid; ?> fw-bold" 
                                                             min="0" 
                                                             max="<?php echo $max_marks; ?>" 
-                                                            step="0.5" 
-                                                            value="<?php echo htmlspecialchars($current_marks); ?>" 
+                                                            step="0.25" 
+                                                            value="<?php echo htmlspecialchars($current_marks_disp); ?>" 
                                                             oninput="calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);"
                                                             style="width: 100px;">
                                                  </div>
                                                  <div class="col-auto">
-                                                     <button type="button" class="btn btn-sm btn-outline-success" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $max_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Full Mark (<?php echo $max_marks; ?>)</button>
-                                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $half_marks; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Half Mark (<?php echo $half_marks; ?>)</button>
+                                                     <button type="button" class="btn btn-sm btn-outline-success" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $max_marks_disp; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Full Mark (<?php echo $max_marks_disp; ?>)</button>
+                                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '<?php echo $half_marks_disp; ?>'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Half Mark (<?php echo $half_marks_disp; ?>)</button>
                                                      <button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById('desc_mark_<?php echo $aid; ?>').value = '0'; calculateTotalScore(<?php echo $rid; ?>, <?php echo $mcq_earned_marks; ?>, <?php echo $total_max_marks; ?>);">Zero (0)</button>
                                                  </div>
                                              </div>
@@ -583,35 +595,35 @@ $published_count = $stats['published_count'] ?? 0;
                                             $corr_opt  = $m_item['correct_option'] ?? '';
                                         ?>
                                             <div class="accordion-item border rounded-3 mb-2 overflow-hidden">
-                                                <h2 class="accordion-header">
-                                                    <button class="accordion-button collapsed py-2 <?php echo $m_correct ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#mcqCol<?php echo $rid . '_' . $m_num; ?>">
-                                                        <div class="d-flex align-items-center justify-content-between w-100 me-2">
-                                                            <span class="small fw-bold">Q<?php echo $m_num; ?>: <?php echo htmlspecialchars($m_item['question_text']); ?></span>
-                                                            <span class="badge <?php echo $m_correct ? 'bg-success' : 'bg-danger'; ?> rounded-pill ms-2">
-                                                                <?php echo $m_correct ? 'Correct (+1)' : 'Incorrect (0)'; ?>
-                                                            </span>
-                                                        </div>
-                                                    </button>
-                                                </h2>
-                                                <div id="mcqCol<?php echo $rid . '_' . $m_num; ?>" class="accordion-collapse collapse" data-bs-parent="#mcqAccordion<?php echo $rid; ?>">
-                                                    <div class="accordion-body bg-white small py-3">
-                                                        <ul class="list-group list-group-flush mb-2">
-                                                            <li class="list-group-item py-1"><strong>A:</strong> <?php echo htmlspecialchars($m_item['option_a']); ?></li>
-                                                            <li class="list-group-item py-1"><strong>B:</strong> <?php echo htmlspecialchars($m_item['option_b']); ?></li>
-                                                            <li class="list-group-item py-1"><strong>C:</strong> <?php echo htmlspecialchars($m_item['option_c']); ?></li>
-                                                            <li class="list-group-item py-1"><strong>D:</strong> <?php echo htmlspecialchars($m_item['option_d']); ?></li>
-                                                        </ul>
-                                                        <div class="d-flex gap-4">
-                                                            <div><strong>Student Answer:</strong> Option <?php echo htmlspecialchars($user_opt ?: 'None'); ?></div>
-                                                            <div class="text-success"><strong>Correct Answer:</strong> Option <?php echo htmlspecialchars($corr_opt); ?></div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
+                                                 <h2 class="accordion-header">
+                                                     <button class="accordion-button collapsed py-2 <?php echo $m_correct ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#mcqCol<?php echo $rid . '_' . $m_num; ?>">
+                                                         <div class="d-flex align-items-center justify-content-between w-100 me-2">
+                                                             <span class="small fw-bold">Q<?php echo $m_num; ?>: <?php echo htmlspecialchars($m_item['question_text']); ?></span>
+                                                             <span class="badge <?php echo $m_correct ? 'bg-success' : 'bg-danger'; ?> rounded-pill ms-2">
+                                                                 <?php echo $m_correct ? 'Correct (+1)' : 'Incorrect (0)'; ?>
+                                                             </span>
+                                                         </div>
+                                                     </button>
+                                                 </h2>
+                                                 <div id="mcqCol<?php echo $rid . '_' . $m_num; ?>" class="accordion-collapse collapse" data-bs-parent="#mcqAccordion<?php echo $rid; ?>">
+                                                     <div class="accordion-body bg-white small py-3">
+                                                         <ul class="list-group list-group-flush mb-2">
+                                                             <li class="list-group-item py-1"><strong>A:</strong> <?php echo htmlspecialchars($m_item['option_a']); ?></li>
+                                                             <li class="list-group-item py-1"><strong>B:</strong> <?php echo htmlspecialchars($m_item['option_b']); ?></li>
+                                                             <li class="list-group-item py-1"><strong>C:</strong> <?php echo htmlspecialchars($m_item['option_c']); ?></li>
+                                                             <li class="list-group-item py-1"><strong>D:</strong> <?php echo htmlspecialchars($m_item['option_d']); ?></li>
+                                                         </ul>
+                                                         <div class="d-flex gap-4">
+                                                             <div><strong>Student Answer:</strong> Option <?php echo htmlspecialchars($user_opt ?: 'None'); ?></div>
+                                                             <div class="text-success"><strong>Correct Answer:</strong> Option <?php echo htmlspecialchars($corr_opt); ?></div>
+                                                         </div>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                         <?php endforeach; ?>
+                                     </div>
+                                 </div>
+                             <?php endif; ?>
                         <?php else: ?>
                             <div class="alert alert-light border text-muted mb-4">
                                 <i class="bi bi-info-circle me-1"></i> Individual question responses are not available for this record (taken before answer tracking was enabled). You can still evaluate and publish the final score and feedback below.
@@ -625,16 +637,17 @@ $published_count = $stats['published_count'] ?? 0;
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold text-dark mb-1">Final Marks Awarded</label>
                                     <div class="input-group">
-                                        <input type="number" 
-                                               name="final_score" 
-                                               id="final_score_input_<?php echo $rid; ?>" 
-                                               class="form-control form-control-lg fw-extrabold text-primary" 
-                                               min="0" 
-                                               max="<?php echo max(100, $total_max_marks); ?>" 
-                                               value="<?php echo $r['score']; ?>" 
-                                               required>
-                                        <span class="input-group-text fw-bold">/ <?php echo $total_max_marks; ?> marks</span>
-                                    </div>
+                                         <input type="number" 
+                                                step="any"
+                                                name="final_score" 
+                                                id="final_score_input_<?php echo $rid; ?>" 
+                                                class="form-control form-control-lg fw-extrabold text-primary" 
+                                                min="0" 
+                                                max="<?php echo max(100, $total_max_marks); ?>" 
+                                                value="<?php echo rtrim(rtrim(number_format((float)$r['score'], 2), '0'), '.'); ?>" 
+                                                required>
+                                         <span class="input-group-text fw-bold">/ <?php echo $total_max_marks; ?> marks</span>
+                                     </div>
                                     <?php if ($has_items && !empty($desc_items)): ?>
                                         <button type="button" 
                                                 class="btn btn-sm btn-link text-decoration-none px-0 mt-1" 
@@ -678,26 +691,48 @@ $published_count = $stats['published_count'] ?? 0;
     </div>
     <?php endforeach; ?>
 
-    <script>
-    function calculateTotalScore(resultId, mcqEarnedMarks) {
-        let descInputs = document.querySelectorAll('.desc-mark-input-' + resultId);
-        let descEarned = 0;
-        descInputs.forEach(function(input) {
-            let val = parseFloat(input.value);
-            if (!isNaN(val)) {
-                descEarned += val;
-            }
-        });
+     <script>
+     function calculateTotalScore(resultId, mcqEarnedMarks) {
+         let descInputs = document.querySelectorAll('.desc-mark-input-' + resultId);
+         let descEarned = 0;
+         descInputs.forEach(function(input) {
+             let val = parseFloat(input.value);
+             if (!isNaN(val)) {
+                 descEarned += val;
+             }
+         });
 
-        let totalEarned = (parseFloat(mcqEarnedMarks) || 0) + descEarned;
-        if (totalEarned < 0) totalEarned = 0;
+         let totalEarned = (parseFloat(mcqEarnedMarks) || 0) + descEarned;
+         if (totalEarned < 0) totalEarned = 0;
 
-        let scoreInput = document.getElementById('final_score_input_' + resultId);
-        if (scoreInput) {
-            scoreInput.value = Math.round(totalEarned);
-        }
-    }
-    </script>
+         let scoreInput = document.getElementById('final_score_input_' + resultId);
+         if (scoreInput) {
+             let rounded = Math.round(totalEarned * 100) / 100;
+             scoreInput.value = (rounded % 1 === 0) ? rounded.toString() : rounded.toFixed(2).replace(/\.?0+$/, '');
+         }
+     }
+
+     // Render math inside modals when opened
+     document.addEventListener('DOMContentLoaded', function() {
+         document.querySelectorAll('.modal').forEach(function(modalEl) {
+             modalEl.addEventListener('shown.bs.modal', function() {
+                 if (typeof renderMathInElement === 'function') {
+                     try {
+                         renderMathInElement(modalEl, {
+                             delimiters: [
+                                 {left: '$$', right: '$$', display: true},
+                                 {left: '$',  right: '$',  display: false},
+                                 {left: '\\(', right: '\\)', display: false},
+                                 {left: '\\[', right: '\\]', display: true}
+                             ],
+                             throwOnError: false
+                         });
+                     } catch(e) {}
+                 }
+             });
+         });
+     });
+     </script>
 <?php endif; ?>
 
 <script>

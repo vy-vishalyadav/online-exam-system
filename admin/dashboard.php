@@ -108,14 +108,15 @@ $recent_results = mysqli_query($conn, "SELECT r.*, s.name AS student_name, e.tit
                                     <?php 
                                     $out_of = (float)($r['exam_total_marks'] ?? 0);
                                     $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
+                                    $score_fmt = rtrim(rtrim(number_format((float)$r['score'], 2), '0'), '.');
                                     ?>
                                     <?php if ($is_pending): ?>
                                         <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
-                                            Draft: <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                            Draft: <?php echo $score_fmt; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                         </span>
                                     <?php else: ?>
                                         <span class="fw-bold text-dark">
-                                            <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                            <?php echo $score_fmt; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                         </span>
                                     <?php endif; ?>
                                 </td>

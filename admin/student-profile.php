@@ -148,7 +148,7 @@ $avg_score       = $published_count > 0 ? round(array_sum(array_column(array_val
             </div>
             <div class="col-6 col-md-3">
                 <div class="text-center p-3 bg-light rounded-3">
-                    <div class="fw-extrabold fs-3 text-dark"><?php echo $avg_score; ?> marks</div>
+                    <div class="fw-extrabold fs-3 text-dark"><?php echo rtrim(rtrim(number_format((float)$avg_score, 2), '0'), '.'); ?> marks</div>
                     <div class="text-muted small">Avg Marks</div>
                 </div>
             </div>
@@ -198,12 +198,13 @@ $avg_score       = $published_count > 0 ? round(array_sum(array_column(array_val
                                     <?php 
                                     $out_of = (float)($r['exam_total_marks'] ?? 0);
                                     $display_total = ($out_of > 0) ? rtrim(rtrim(number_format($out_of, 2), '0'), '.') : '';
+                                    $score_fmt = rtrim(rtrim(number_format((float)$r['score'], 2), '0'), '.');
                                     ?>
                                     <?php if ($pending): ?>
-                                        <span class="text-muted fst-italic">Draft: <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks</span>
+                                        <span class="text-muted fst-italic">Draft: <?php echo $score_fmt; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks</span>
                                     <?php else: ?>
                                         <span class="fw-bold text-primary">
-                                            <?php echo $r['score']; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
+                                            <?php echo $score_fmt; ?><?php echo $display_total ? " / $display_total" : ''; ?> marks
                                         </span>
                                     <?php endif; ?>
                                 </td>

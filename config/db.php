@@ -188,6 +188,15 @@ function run_auto_migrations($conn) {
     if ($check && mysqli_num_rows($check) === 0) {
         @mysqli_query($conn, "ALTER TABLE exam_sessions ADD COLUMN assigned_questions TEXT NULL AFTER question_seed");
     }
+
+    // 18. results.score — support decimal / fractional marks (e.g. 2.5, 7.5, 12.25)
+    $check = mysqli_query($conn, "SHOW COLUMNS FROM results LIKE 'score'");
+    if ($check) {
+        $col = mysqli_fetch_assoc($check);
+        if ($col && strpos(strtolower($col['Type'] ?? ''), 'decimal') === false && strpos(strtolower($col['Type'] ?? ''), 'float') === false) {
+            @mysqli_query($conn, "ALTER TABLE results MODIFY COLUMN score DECIMAL(6,2) NOT NULL DEFAULT 0.00");
+        }
+    }
 }
 }
 

@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS `results` (
     `id`           INT AUTO_INCREMENT PRIMARY KEY,
     `student_id`   INT          NOT NULL,
     `exam_id`      INT          NOT NULL,
-    `score`        INT          NOT NULL,
+    `score`        DECIMAL(6,2) NOT NULL DEFAULT 0.00,
     `status`       VARCHAR(20)  NOT NULL DEFAULT 'published',
     `admin_feedback` TEXT       NULL,
     `attempted_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
