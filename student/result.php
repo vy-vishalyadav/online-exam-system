@@ -337,83 +337,162 @@ if (!empty($_SESSION['submission_review'])) {
     unset($_SESSION['submission_review']);
 }
 
-// ── Handle view specific past result by exam_id (from dashboard "View Result" button) ──
-if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['view_exam_id'])) {
-    $view_exam_id = (int)$_GET['view_exam_id'];
-    if ($view_exam_id > 0) {
+// ── Handle view specific past result by result_id OR exam_id ──
+$view_result_id = isset($_GET['view_result_id']) ? (int)$_GET['view_result_id'] : 0;
+$view_exam_id   = isset($_GET['view_exam_id']) ? (int)$_GET['view_exam_id'] : 0;
+
+if (empty($submission_review) && $_SERVER['REQUEST_METHOD'] === 'GET' && ($view_result_id > 0 || $view_exam_id > 0)) {
+    $vr_stmt = null;
+    if ($view_result_id > 0) {
         $vr_stmt = mysqli_prepare($conn,
             "SELECT r.*, e.title AS exam_title
              FROM results r
              JOIN exams e ON r.exam_id = e.id
-             WHERE r.student_id = ? AND r.exam_id = ? AND r.status = 'published'
+             WHERE r.student_id = ? AND r.id = ?
+             LIMIT 1");
+        if ($vr_stmt) {
+            mysqli_stmt_bind_param($vr_stmt, "ii", $student_id, $view_result_id);
+        }
+    } else {
+        $vr_stmt = mysqli_prepare($conn,
+            "SELECT r.*, e.title AS exam_title
+             FROM results r
+             JOIN exams e ON r.exam_id = e.id
+             WHERE r.student_id = ? AND r.exam_id = ?
              ORDER BY r.attempted_at DESC LIMIT 1");
         if ($vr_stmt) {
             mysqli_stmt_bind_param($vr_stmt, "ii", $student_id, $view_exam_id);
-            mysqli_stmt_execute($vr_stmt);
-            $vr = mysqli_fetch_assoc(mysqli_stmt_get_result($vr_stmt));
-            mysqli_stmt_close($vr_stmt);
+        }
+    }
 
-            if ($vr) {
-                $sa_stmt = mysqli_prepare($conn,
-                    "SELECT sa.*, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
-                            q.correct_option, q.question_type
-                     FROM student_answers sa
-                     JOIN questions q ON sa.question_id = q.id
-                     WHERE sa.result_id = ?
-                     ORDER BY sa.id ASC");
-                if ($sa_stmt) {
-                    mysqli_stmt_bind_param($sa_stmt, "i", (int)$vr['id']);
-                    mysqli_stmt_execute($sa_stmt);
-                    $sa_res     = mysqli_stmt_get_result($sa_stmt);
-                    $view_items = []; $view_correct = 0; $view_total = 0; $view_desc = 0;
+    if ($vr_stmt) {
+        mysqli_stmt_execute($vr_stmt);
+        $vr_res = mysqli_stmt_get_result($vr_stmt);
+        $vr     = ($vr_res && $vr_res instanceof mysqli_result) ? mysqli_fetch_assoc($vr_res) : null;
+        mysqli_stmt_close($vr_stmt);
+
+        if ($vr) {
+            $view_items   = [];
+            $view_correct = 0;
+            $view_total   = 0;
+            $view_desc    = 0;
+            $sa_has_rows  = false;
+
+            $sa_stmt = mysqli_prepare($conn,
+                "SELECT sa.*, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                        q.correct_option, q.question_type
+                 FROM student_answers sa
+                 JOIN questions q ON sa.question_id = q.id
+                 WHERE sa.result_id = ?
+                 ORDER BY sa.id ASC");
+            if ($sa_stmt) {
+                mysqli_stmt_bind_param($sa_stmt, "i", (int)$vr['id']);
+                mysqli_stmt_execute($sa_stmt);
+                $sa_res = mysqli_stmt_get_result($sa_stmt);
+                if ($sa_res && $sa_res instanceof mysqli_result) {
                     while ($sa_row = mysqli_fetch_assoc($sa_res)) {
+                        $sa_has_rows = true;
                         $view_total++;
                         $q_type = $sa_row['question_type'] ?? 'mcq';
                         if ($q_type === 'descriptive') {
                             $view_desc++;
                             $view_items[] = [
-                                'question_id'   => $sa_row['question_id'],
+                                'question_id'   => (int)$sa_row['question_id'],
                                 'question_type' => 'descriptive',
-                                'question_text' => $sa_row['question_text'],
-                                'user_ans'      => $sa_row['user_answer'],
+                                'question_text' => (string)($sa_row['question_text'] ?? ''),
+                                'user_ans'      => (string)($sa_row['user_answer'] ?? ''),
                                 'is_correct'    => null,
                                 'marks'         => $sa_row['marks_awarded'],
                             ];
                         } else {
-                            if ($sa_row['is_correct']) $view_correct++;
+                            $is_c = !empty($sa_row['is_correct']);
+                            if ($is_c) $view_correct++;
                             $view_items[] = [
-                                'question_id'   => $sa_row['question_id'],
+                                'question_id'   => (int)$sa_row['question_id'],
                                 'question_type' => 'mcq',
-                                'question_text' => $sa_row['question_text'],
-                                'option_a'      => $sa_row['option_a'],
-                                'option_b'      => $sa_row['option_b'],
-                                'option_c'      => $sa_row['option_c'],
-                                'option_d'      => $sa_row['option_d'],
-                                'user_ans'      => $sa_row['user_answer'],
-                                'correct_ans'   => $sa_row['correct_option'],
-                                'is_correct'    => $sa_row['is_correct'],
+                                'question_text' => (string)($sa_row['question_text'] ?? ''),
+                                'option_a'      => (string)($sa_row['option_a'] ?? ''),
+                                'option_b'      => (string)($sa_row['option_b'] ?? ''),
+                                'option_c'      => (string)($sa_row['option_c'] ?? ''),
+                                'option_d'      => (string)($sa_row['option_d'] ?? ''),
+                                'user_ans'      => (string)($sa_row['user_answer'] ?? ''),
+                                'correct_ans'   => (string)($sa_row['correct_option'] ?? ''),
+                                'is_correct'    => $is_c,
                                 'marks'         => $sa_row['marks_awarded'],
                             ];
                         }
                     }
-                    mysqli_stmt_close($sa_stmt);
-                    $submission_review = [
-                        'result_id'       => $vr['id'],
-                        'exam_title'      => $vr['exam_title'],
-                        'status'          => 'published',
-                        'has_descriptive' => $view_desc > 0,
-                        'desc_count'      => $view_desc,
-                        'total'           => $view_total,
-                        'mcq_count'       => max(0, $view_total - $view_desc),
-                        'correct'         => $view_correct,
-                        'wrong'           => max(0, ($view_total - $view_desc) - $view_correct),
-                        'score'           => $vr['score'],
-                        'passed'          => $vr['score'] >= 50,
-                        'items'           => $view_items,
-                        'is_historical'   => true,
-                    ];
+                }
+                mysqli_stmt_close($sa_stmt);
+            }
+
+            // Fallback if student_answers has no records (e.g. legacy/direct attempts)
+            if (empty($view_items)) {
+                $q_stmt = mysqli_prepare($conn,
+                    "SELECT id, question_text, option_a, option_b, option_c, option_d, correct_option, question_type, marks
+                     FROM questions
+                     WHERE exam_id = ?
+                     ORDER BY id ASC");
+                if ($q_stmt) {
+                    mysqli_stmt_bind_param($q_stmt, "i", (int)$vr['exam_id']);
+                    mysqli_stmt_execute($q_stmt);
+                    $q_res = mysqli_stmt_get_result($q_stmt);
+                    if ($q_res && $q_res instanceof mysqli_result) {
+                        while ($q_row = mysqli_fetch_assoc($q_res)) {
+                            $view_total++;
+                            $q_type = $q_row['question_type'] ?? 'mcq';
+                            if ($q_type === 'descriptive') {
+                                $view_desc++;
+                                $view_items[] = [
+                                    'question_id'   => (int)$q_row['id'],
+                                    'question_type' => 'descriptive',
+                                    'question_text' => (string)($q_row['question_text'] ?? ''),
+                                    'user_ans'      => '',
+                                    'is_correct'    => null,
+                                    'marks'         => null,
+                                ];
+                            } else {
+                                $view_items[] = [
+                                    'question_id'   => (int)$q_row['id'],
+                                    'question_type' => 'mcq',
+                                    'question_text' => (string)($q_row['question_text'] ?? ''),
+                                    'option_a'      => (string)($q_row['option_a'] ?? ''),
+                                    'option_b'      => (string)($q_row['option_b'] ?? ''),
+                                    'option_c'      => (string)($q_row['option_c'] ?? ''),
+                                    'option_d'      => (string)($q_row['option_d'] ?? ''),
+                                    'user_ans'      => '',
+                                    'correct_ans'   => (string)($q_row['correct_option'] ?? ''),
+                                    'is_correct'    => false,
+                                    'marks'         => 0,
+                                ];
+                            }
+                        }
+                    }
+                    mysqli_stmt_close($q_stmt);
                 }
             }
+
+            $mcq_count = max(0, $view_total - $view_desc);
+            if (!$sa_has_rows && $mcq_count > 0 && (int)$vr['score'] > 0) {
+                $view_correct = (int)round(((int)$vr['score'] / 100) * $mcq_count);
+            }
+            $wrong_count = max(0, $mcq_count - $view_correct);
+
+            $submission_review = [
+                'result_id'       => (int)$vr['id'],
+                'exam_title'      => (string)($vr['exam_title'] ?? 'Exam'),
+                'status'          => (string)($vr['status'] ?? 'published'),
+                'has_descriptive' => $view_desc > 0,
+                'desc_count'      => $view_desc,
+                'total'           => $view_total,
+                'mcq_count'       => $mcq_count,
+                'correct'         => $view_correct,
+                'wrong'           => $wrong_count,
+                'score'           => (int)$vr['score'],
+                'passed'          => ((int)$vr['score']) >= 50,
+                'items'           => $view_items,
+                'is_historical'   => true,
+            ];
         }
     }
 }
@@ -471,12 +550,14 @@ mysqli_stmt_close($stmt);
 <?php if ($submission_review): ?>
     <?php if ($submission_review['status'] === 'pending'): ?>
         <!-- Pending Review Scorecard Banner -->
-        <div class="card shadow-lg border-0 rounded-4 mb-5 overflow-hidden">
+        <div class="card shadow-lg border-0 rounded-4 mb-5 overflow-hidden" id="resultReviewCard">
             <div class="card-header p-4 text-center text-white bg-warning bg-gradient">
                 <div class="mb-2">
                     <i class="bi bi-hourglass-split fs-1"></i>
                 </div>
-                <h2 class="fw-extrabold mb-1">Exam Submitted - Result Pending Review ⏳</h2>
+                <h2 class="fw-extrabold mb-1">
+                    <?php echo !empty($submission_review['is_historical']) ? 'Exam Review - Result Pending Review ⏳' : 'Exam Submitted - Result Pending Review ⏳'; ?>
+                </h2>
                 <p class="mb-0 text-white opacity-90">Your answers for <strong><?php echo htmlspecialchars($submission_review['exam_title']); ?></strong> have been recorded safely.</p>
             </div>
 
@@ -517,7 +598,10 @@ mysqli_stmt_close($stmt);
                     </div>
                 </div>
 
-                <div class="text-center">
+                <div class="text-center d-flex justify-content-center gap-3 flex-wrap">
+                    <a href="result.php" class="btn btn-outline-secondary btn-lg px-4 rounded-pill shadow-sm fw-bold">
+                        <i class="bi bi-clock-history me-1"></i> All Results
+                    </a>
                     <a href="dashboard.php" class="btn btn-primary btn-lg px-5 rounded-pill shadow-sm fw-bold">
                         <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
                     </a>
@@ -527,12 +611,14 @@ mysqli_stmt_close($stmt);
 
     <?php else: ?>
         <!-- Scorecard Banner -->
-        <div class="card shadow-lg border-0 rounded-4 mb-5 overflow-hidden">
+        <div class="card shadow-lg border-0 rounded-4 mb-5 overflow-hidden" id="resultReviewCard">
             <div class="card-header p-4 text-center text-white" style="background: linear-gradient(135deg, #1e40af, #3b82f6);">
                 <div class="mb-2">
                     <i class="bi bi-journal-check fs-1"></i>
                 </div>
-                <h2 class="fw-extrabold mb-1">Exam Submitted ✓</h2>
+                <h2 class="fw-extrabold mb-1">
+                    <?php echo !empty($submission_review['is_historical']) ? 'Exam Performance Review' : 'Exam Submitted ✓'; ?>
+                </h2>
                 <p class="mb-0 text-white opacity-75">Result for <strong><?php echo htmlspecialchars($submission_review['exam_title']); ?></strong></p>
             </div>
 
@@ -581,14 +667,24 @@ mysqli_stmt_close($stmt);
                 <?php
                 $rev_desc_items = [];
                 $rev_mcq_items  = [];
-                foreach ($submission_review['items'] as $item) {
-                    if (($item['question_type'] ?? 'mcq') === 'descriptive') {
-                        $rev_desc_items[] = $item;
-                    } else {
-                        $rev_mcq_items[]  = $item;
+                if (!empty($submission_review['items'])) {
+                    foreach ($submission_review['items'] as $item) {
+                        if (($item['question_type'] ?? 'mcq') === 'descriptive') {
+                            $rev_desc_items[] = $item;
+                        } else {
+                            $rev_mcq_items[]  = $item;
+                        }
                     }
                 }
                 ?>
+
+                <!-- Fallback when no questions are available -->
+                <?php if (empty($rev_desc_items) && empty($rev_mcq_items)): ?>
+                    <div class="alert alert-light border rounded-4 text-center py-4 text-muted mb-4">
+                        <i class="bi bi-journal-x fs-2 d-block mb-2 text-secondary"></i>
+                        Detailed question responses are not available for this record.
+                    </div>
+                <?php endif; ?>
 
                 <!-- Descriptive Section -->
                 <?php if (!empty($rev_desc_items)): ?>
@@ -605,7 +701,7 @@ mysqli_stmt_close($stmt);
                         ?>
                             <div class="card mb-3 border rounded-3 p-3 bg-white shadow-sm">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <span class="fw-bold text-dark">Q<?php echo $d_num; ?>: <?php echo htmlspecialchars($d_item['question_text']); ?></span>
+                                    <span class="fw-bold text-dark">Q<?php echo $d_num; ?>: <?php echo htmlspecialchars($d_item['question_text'] ?? ''); ?></span>
                                     <span class="badge bg-light text-dark border">Descriptive</span>
                                 </div>
                                 <div class="p-3 bg-light rounded-3 border mb-2">
@@ -617,7 +713,7 @@ mysqli_stmt_close($stmt);
                                 <?php if ($d_marks !== null && $d_marks !== ''): ?>
                                     <div class="d-flex align-items-center gap-2">
                                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1 fw-bold">
-                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo htmlspecialchars($d_marks); ?> pts
+                                            <i class="bi bi-award me-1"></i> Marks Awarded: <?php echo htmlspecialchars((string)$d_marks); ?> pts
                                         </span>
                                     </div>
                                 <?php endif; ?>
@@ -640,19 +736,22 @@ mysqli_stmt_close($stmt);
                             <?php foreach ($rev_mcq_items as $m_idx => $item): 
                                 $num     = $m_idx + 1;
                                 $opt_map = [
-                                    'A' => $item['option_a'] ?? '', 
-                                    'B' => $item['option_b'] ?? '', 
-                                    'C' => $item['option_c'] ?? '', 
-                                    'D' => $item['option_d'] ?? ''
+                                    'A' => (string)($item['option_a'] ?? ''), 
+                                    'B' => (string)($item['option_b'] ?? ''), 
+                                    'C' => (string)($item['option_c'] ?? ''), 
+                                    'D' => (string)($item['option_d'] ?? '')
                                 ];
+                                $user_ans_val = (string)($item['user_ans'] ?? '');
+                                $corr_ans_val = (string)($item['correct_ans'] ?? '');
+                                $is_correct   = !empty($item['is_correct']);
                             ?>
                                 <div class="accordion-item border rounded-3 mb-2 overflow-hidden">
                                     <h2 class="accordion-header">
-                                        <button class="accordion-button <?php echo $item['is_correct'] ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?php echo $num; ?>">
+                                        <button class="accordion-button <?php echo $is_correct ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?php echo $num; ?>">
                                             <div class="d-flex align-items-center gap-2 w-100 me-3">
                                                 <span class="fw-bold">Q<?php echo $num; ?>:</span>
-                                                <span class="text-truncate flex-grow-1 text-dark fw-semibold"><?php echo htmlspecialchars($item['question_text']); ?></span>
-                                                <?php if ($item['is_correct']): ?>
+                                                <span class="text-truncate flex-grow-1 text-dark fw-semibold"><?php echo htmlspecialchars($item['question_text'] ?? ''); ?></span>
+                                                <?php if ($is_correct): ?>
                                                     <span class="badge bg-success rounded-pill px-3 py-1">Correct</span>
                                                 <?php else: ?>
                                                     <span class="badge bg-danger rounded-pill px-3 py-1">Incorrect</span>
@@ -662,20 +761,24 @@ mysqli_stmt_close($stmt);
                                     </h2>
                                     <div id="collapse<?php echo $num; ?>" class="accordion-collapse collapse show" data-bs-parent="#reviewAccordion">
                                         <div class="accordion-body bg-white">
-                                            <p class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($item['question_text']); ?></p>
+                                            <p class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($item['question_text'] ?? ''); ?></p>
                                             <div class="small mb-2">
                                                 <strong>Your Answer:</strong> 
-                                                <?php if ($item['user_ans']): ?>
-                                                    <span class="<?php echo $item['is_correct'] ? 'text-success fw-bold' : 'text-danger fw-bold'; ?>">
-                                                        Option <?php echo htmlspecialchars($item['user_ans']); ?>: <?php echo htmlspecialchars($opt_map[$item['user_ans']] ?? ''); ?>
+                                                <?php if ($user_ans_val !== ''): 
+                                                    $user_ans_text = $opt_map[$user_ans_val] ?? '';
+                                                ?>
+                                                    <span class="<?php echo $is_correct ? 'text-success fw-bold' : 'text-danger fw-bold'; ?>">
+                                                        Option <?php echo htmlspecialchars($user_ans_val); ?><?php echo $user_ans_text !== '' ? ': ' . htmlspecialchars($user_ans_text) : ''; ?>
                                                     </span>
                                                 <?php else: ?>
-                                                    <span class="text-muted fst-italic">Not answered</span>
+                                                    <span class="text-muted fst-italic">Not answered / Not recorded</span>
                                                 <?php endif; ?>
                                             </div>
-                                            <?php if (!$item['is_correct']): ?>
+                                            <?php if (!$is_correct && $corr_ans_val !== ''): 
+                                                $corr_ans_text = $opt_map[$corr_ans_val] ?? '';
+                                            ?>
                                                 <div class="small text-success fw-bold">
-                                                    <i class="bi bi-check-circle-fill me-1"></i> Correct Answer: Option <?php echo htmlspecialchars($item['correct_ans']); ?>: <?php echo htmlspecialchars($opt_map[$item['correct_ans']] ?? ''); ?>
+                                                    <i class="bi bi-check-circle-fill me-1"></i> Correct Answer: Option <?php echo htmlspecialchars($corr_ans_val); ?><?php echo $corr_ans_text !== '' ? ': ' . htmlspecialchars($corr_ans_text) : ''; ?>
                                                 </div>
                                             <?php endif; ?>
                                         </div>
@@ -686,7 +789,10 @@ mysqli_stmt_close($stmt);
                     </div>
                 <?php endif; ?>
 
-                <div class="text-center">
+                <div class="text-center d-flex justify-content-center gap-3 flex-wrap">
+                    <a href="result.php" class="btn btn-outline-secondary btn-lg px-4 rounded-pill shadow-sm fw-bold">
+                        <i class="bi bi-clock-history me-1"></i> All Results
+                    </a>
                     <a href="dashboard.php" class="btn btn-primary btn-lg px-5 rounded-pill shadow-sm fw-bold">
                         <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
                     </a>
@@ -782,12 +888,15 @@ mysqli_stmt_close($stmt);
                             <td class="text-end text-muted small"><?php echo date('d M Y, h:i A', strtotime($r['attempted_at'])); ?></td>
                             <td class="pe-4 text-center">
                                 <?php if (!$is_pending): ?>
-                                    <a href="result.php?view_exam_id=<?php echo (int)$r['exam_id']; ?>"
+                                    <a href="result.php?view_result_id=<?php echo (int)$r['id']; ?>#resultReviewCard"
                                        class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">
                                         <i class="bi bi-eye me-1"></i> View
                                     </a>
                                 <?php else: ?>
-                                    <span class="text-muted small">—</span>
+                                    <a href="result.php?view_result_id=<?php echo (int)$r['id']; ?>#resultReviewCard"
+                                       class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold" title="View Review Status">
+                                        <i class="bi bi-hourglass-split me-1"></i> Status
+                                    </a>
                                 <?php endif; ?>
                             </td>
                         </tr>

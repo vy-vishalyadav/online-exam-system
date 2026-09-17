@@ -174,7 +174,7 @@ $exams = mysqli_query($conn, $query);
                                     <i class="bi bi-hourglass-split me-1"></i> Awaiting Result
                                 </button>
                             <?php else: ?>
-                                <a href="result.php?view_exam_id=<?php echo $exam['id']; ?>"
+                                <a href="result.php?view_exam_id=<?php echo (int)$exam['id']; ?>#resultReviewCard"
                                    class="btn btn-primary w-100 fw-bold py-2">
                                     <i class="bi bi-eye me-1"></i> View Result
                                 </a>

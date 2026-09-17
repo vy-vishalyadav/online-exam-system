@@ -122,7 +122,7 @@ mysqli_stmt_close($chk_res);
 
 if ($has_result || ($sess_row && (int)$sess_row['submitted'] === 1)) {
     // Student already submitted — redirect to scorecard
-    header("Location: result.php?view_exam_id={$exam_id}&already_submitted=1");
+    header("Location: result.php?view_exam_id={$exam_id}&already_submitted=1#resultReviewCard");
     exit;
 }
 
