@@ -7,6 +7,10 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+require_once __DIR__ . '/../includes/exam_submission.php';
+// Opportunistically finalize any expired student attempts (throttled to once per 60s globally)
+runOpportunisticExpiredExamCleanup($conn);
+
 $q_classes   = mysqli_query($conn, "SELECT COUNT(*) AS c FROM classes");
 $total_classes = ($q_classes ? mysqli_fetch_assoc($q_classes)['c'] : 0);
 

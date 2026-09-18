@@ -7,6 +7,10 @@ if (!isset($_SESSION['student_id'])) {
     exit;
 }
 
+require_once __DIR__ . '/../includes/exam_submission.php';
+// Opportunistically finalize any expired student attempts (throttled to once per 60s globally)
+runOpportunisticExpiredExamCleanup($conn);
+
 $student_id = (int)$_SESSION['student_id'];
 
 // Fetch student's current class

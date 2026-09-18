@@ -1,6 +1,7 @@
 <?php
 include '../includes/header.php';
 include '../config/db.php';
+require_once __DIR__ . '/../includes/exam_submission.php';
 
 if (!isset($_SESSION['student_id'])) {
     header("Location: ../index.php");
@@ -226,132 +227,41 @@ if ($is_fresh_session) {
 
 
 // ── Fetch questions (Anti-Cheat Question Pool & Locked Ordering) ─────────────
-$questions = [];
 $pool_limit = (int)($exam['questions_to_display'] ?? 0);
+$assigned_q_str = $session['assigned_questions'] ?? null;
+$questions = getAssignedQuestionsForSession(
+    $conn,
+    $exam_id,
+    (string)($session['question_seed'] ?? ''),
+    $assigned_q_str,
+    $pool_limit
+);
 
-if (!empty($session['assigned_questions'])) {
-    // Resuming session with already locked assigned questions
-    $assigned_ids = array_filter(array_map('intval', explode(',', $session['assigned_questions'])));
-    if (!empty($assigned_ids)) {
-        $in_clause = implode(',', $assigned_ids);
-        $q_res = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$exam_id);
-        $q_map = [];
-        if ($q_res) {
-            while ($q = mysqli_fetch_assoc($q_res)) {
-                $q_map[(int)$q['id']] = $q;
-            }
-        }
-        foreach ($assigned_ids as $aid) {
-            if (isset($q_map[$aid])) {
-                $questions[] = $q_map[$aid];
-            }
-        }
+if (empty($assigned_q_str) && !empty($questions)) {
+    $assigned_ids = array_map(function($q) { return (int)$q['id']; }, $questions);
+    $assigned_str = implode(',', $assigned_ids);
+    $upd_as = mysqli_prepare($conn, "UPDATE exam_sessions SET assigned_questions=? WHERE student_id=? AND exam_id=?");
+    if ($upd_as) {
+        mysqli_stmt_bind_param($upd_as, "sii", $assigned_str, $student_id, $exam_id);
+        mysqli_stmt_execute($upd_as);
+        mysqli_stmt_close($upd_as);
     }
-}
-
-// If fresh session or assigned_questions wasn't set yet:
-if (empty($questions)) {
-    $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
-    $all_pool = [];
-    if ($q_stmt) {
-        mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
-        mysqli_stmt_execute($q_stmt);
-        $questions_res = mysqli_stmt_get_result($q_stmt);
-        if ($questions_res) {
-            while ($q = mysqli_fetch_assoc($questions_res)) {
-                $all_pool[] = $q;
-            }
-        }
-        mysqli_stmt_close($q_stmt);
-    }
-    $total_in_pool = count($all_pool);
-    if ($total_in_pool > 0) {
-        // Seed-based shuffle per student attempt
-        $seed_int = hexdec(substr(md5($session['question_seed']), 0, 8));
-        mt_srand($seed_int);
-        $indices = range(0, $total_in_pool - 1);
-        for ($i = $total_in_pool - 1; $i > 0; $i--) {
-            $j = mt_rand(0, $i);
-            [$indices[$i], $indices[$j]] = [$indices[$j], $indices[$i]];
-        }
-        $shuffled = [];
-        foreach ($indices as $idx) {
-            $shuffled[] = $all_pool[$idx];
-        }
-
-        // Apply Question Pool limit if configured
-        if ($pool_limit > 0 && $pool_limit < count($shuffled)) {
-            $questions = array_slice($shuffled, 0, $pool_limit);
-        } else {
-            $questions = $shuffled;
-        }
-
-        // Lock assigned questions into session for consistency across reloads
-        $assigned_ids = array_map(function($q) { return (int)$q['id']; }, $questions);
-        $assigned_str = implode(',', $assigned_ids);
-        $upd_as = mysqli_prepare($conn, "UPDATE exam_sessions SET assigned_questions=? WHERE student_id=? AND exam_id=?");
-        if ($upd_as) {
-            mysqli_stmt_bind_param($upd_as, "sii", $assigned_str, $student_id, $exam_id);
-            mysqli_stmt_execute($upd_as);
-            mysqli_stmt_close($upd_as);
-        }
-        $session['assigned_questions'] = $assigned_str;
-    }
+    $session['assigned_questions'] = $assigned_str;
 }
 $total_questions = count($questions);
 
 // ── Phase 1: Shuffle MCQ options per question (seeded) ──────────────────────
-$option_maps = []; // [q_id => ['A'=>'origA','B'=>'origC', ...]]
 foreach ($questions as &$q) {
     if (($q['question_type'] ?? 'mcq') !== 'mcq') continue;
-
-    $opts = [
-        'A' => $q['option_a'],
-        'B' => $q['option_b'],
-        'C' => $q['option_c'],
-        'D' => $q['option_d'],
-    ];
-    $correct_text = '';
-    switch (strtoupper($q['correct_option'] ?? 'A')) {
-        case 'A': $correct_text = $q['option_a']; break;
-        case 'B': $correct_text = $q['option_b']; break;
-        case 'C': $correct_text = $q['option_c']; break;
-        case 'D': $correct_text = $q['option_d']; break;
-    }
-
-    // Seed based on student + question_id for consistent shuffle per student
-    $opt_seed = hexdec(substr(md5($session['question_seed'] . '_opt_' . $q['id']), 0, 8));
-    mt_srand($opt_seed);
-    $labels  = ['A', 'B', 'C', 'D'];
-    $values  = array_values($opts);
-    for ($i = 3; $i > 0; $i--) {
-        $j = mt_rand(0, $i);
-        [$values[$i], $values[$j]] = [$values[$j], $values[$i]];
-    }
-
-    // Rebuild shuffled options
-    $new_opts    = array_combine($labels, $values);
-    $new_correct = '';
-    foreach ($new_opts as $lbl => $val) {
-        if ($val === $correct_text) { $new_correct = $lbl; break; }
-    }
-
-    // Store map so result.php can decode correctly
-    $option_maps[$q['id']] = [
-        'map'     => $new_opts,              // label => text
-        'correct' => $new_correct,           // new correct label
-    ];
-
-    $q['option_a']      = $new_opts['A'];
-    $q['option_b']      = $new_opts['B'];
-    $q['option_c']      = $new_opts['C'];
-    $q['option_d']      = $new_opts['D'];
-    $q['correct_option'] = $new_correct;
+    $shuf = getShuffledQuestionOptions((string)($session['question_seed'] ?? ''), (int)$q['id'], $q);
+    $q['option_a']       = $shuf['map']['A'];
+    $q['option_b']       = $shuf['map']['B'];
+    $q['option_c']       = $shuf['map']['C'];
+    $q['option_d']       = $shuf['map']['D'];
+    $q['correct_option'] = $shuf['correct'];
 }
 unset($q);
 
-// Store option maps in session so result.php can score correctly
-$_SESSION['option_maps_' . $exam_id] = $option_maps;
 
 // ── Phase 1: Load existing draft answers (restore on page reload) ─────────────
 $draft_answers = [];
@@ -1224,6 +1134,46 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 if (qId) flushAutosave(qId);
             });
         });
+    });
+
+    // Best-effort flush for dirty descriptive answers when page is hidden or closed
+    function flushAllPendingDrafts() {
+        if (isAutoSubmitting) return;
+        document.querySelectorAll('textarea.descriptive-input').forEach(ta => {
+            const qId = ta.getAttribute('data-qid');
+            if (!qId) return;
+            const currentVal = ta.value;
+            if (lastServerSaved[qId] !== undefined && lastServerSaved[qId] === currentVal) {
+                return;
+            }
+            if (saveTimers[qId]) {
+                clearTimeout(saveTimers[qId]);
+                delete saveTimers[qId];
+            }
+            lastServerSaved[qId] = currentVal;
+            const fd = new FormData();
+            fd.append('exam_id',     EXAM_ID);
+            fd.append('question_id', qId);
+            fd.append('answer',      currentVal);
+            fd.append('csrf_token',  CSRF_TOKEN);
+
+            let sent = false;
+            if (navigator.sendBeacon) {
+                sent = navigator.sendBeacon(SAVE_URL, fd);
+            }
+            if (!sent && window.fetch) {
+                fetch(SAVE_URL, { method: 'POST', body: fd, keepalive: true }).catch(() => {});
+            }
+        });
+    }
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+            flushAllPendingDrafts();
+        }
+    });
+    window.addEventListener('pagehide', function() {
+        flushAllPendingDrafts();
     });
 
     // ── AJAX save indicator ───────────────────────────────────────────────────

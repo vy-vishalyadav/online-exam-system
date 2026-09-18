@@ -282,6 +282,36 @@ function run_migrations($conn): array {
         }
     }
 
+    // 20. Unique index on results(student_id, exam_id)
+    $check = mysqli_query($conn, "SHOW INDEX FROM results WHERE Key_name = 'uq_student_exam_result'");
+    if (!$check) {
+        $errors[] = "Failed to inspect results indexes.";
+        error_log("[Migration Failure] SHOW INDEX FROM results: " . mysqli_error($conn));
+    } elseif (mysqli_num_rows($check) === 0) {
+        // Safety check: ensure no existing duplicate rows exist before adding UNIQUE index
+        $dup_chk = mysqli_query($conn, "SELECT student_id, exam_id, COUNT(*) AS cnt FROM results GROUP BY student_id, exam_id HAVING cnt > 1");
+        if ($dup_chk && mysqli_num_rows($dup_chk) > 0) {
+            $dup_rows = [];
+            while ($dr = mysqli_fetch_assoc($dup_chk)) {
+                $dup_rows[] = "Student {$dr['student_id']} - Exam {$dr['exam_id']} ({$dr['cnt']} results)";
+            }
+            $err_desc = "Cannot add unique index uq_student_exam_result: duplicate results exist (" . implode(', ', $dup_rows) . "). Please resolve duplicates before applying unique constraint.";
+            $errors[] = $err_desc;
+            error_log("[Migration Error] " . $err_desc);
+        } else {
+            $exec("ALTER TABLE results ADD UNIQUE KEY uq_student_exam_result (student_id, exam_id)", "Added unique constraint uq_student_exam_result on results", "Failed to add unique constraint uq_student_exam_result on results");
+        }
+    }
+
+    // 21. app_jobs table for throttled background and opportunistic tasks
+    $exec("CREATE TABLE IF NOT EXISTS app_jobs (
+        job_name VARCHAR(50) NOT NULL PRIMARY KEY,
+        last_run_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        locked_until DATETIME NULL
+    )", "Verified table app_jobs", "Failed to create table app_jobs");
+
+    $exec("INSERT IGNORE INTO app_jobs (job_name, last_run_at) VALUES ('finalize_expired_exams', '2000-01-01 00:00:00')", "Initialized job tracker for finalize_expired_exams", "Failed to initialize job tracker for finalize_expired_exams");
+
     if (empty($errors)) {
         $log("All migrations completed successfully.");
         return [

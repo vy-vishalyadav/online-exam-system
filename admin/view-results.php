@@ -7,6 +7,10 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+require_once __DIR__ . '/../includes/exam_submission.php';
+// Opportunistically finalize any expired student attempts before loading results (throttled to once per 60s globally)
+runOpportunisticExpiredExamCleanup($conn);
+
 // CSRF token generation
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));

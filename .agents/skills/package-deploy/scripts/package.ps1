@@ -39,7 +39,7 @@ if ($hasError) {
 Write-Host "==> Step 2: Collecting strictly essential website runtime files..." -ForegroundColor Cyan
 
 # Runtime folders and files strictly needed for the website to function
-$allowedFolders = @('admin', 'config', 'css', 'includes', 'sql', 'student')
+$allowedFolders = @('admin', 'config', 'cron', 'css', 'includes', 'sql', 'student')
 $allowedRootFiles = @('index.php', 'logout.php', 'version.txt', '.htaccess')
 
 $runtimeFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()

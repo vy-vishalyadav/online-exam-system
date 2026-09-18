@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS `results` (
     `admin_feedback` TEXT       NULL,
     `attempted_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `evaluated_at` DATETIME     NULL,
+    UNIQUE KEY `uq_student_exam_result` (`student_id`, `exam_id`),
     FOREIGN KEY (`student_id`) REFERENCES `students`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`exam_id`)    REFERENCES `exams`(`id`)    ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -174,6 +175,19 @@ CREATE TABLE IF NOT EXISTS `exam_violations` (
     FOREIGN KEY (`student_id`) REFERENCES `students`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`exam_id`)    REFERENCES `exams`(`id`)    ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ─────────────────────────────────────────────
+--  TABLE: app_jobs
+--  (throttled background and maintenance tasks)
+-- ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `app_jobs` (
+    `job_name`     VARCHAR(50) NOT NULL PRIMARY KEY,
+    `last_run_at`  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `locked_until` DATETIME    NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO `app_jobs` (`job_name`, `last_run_at`) VALUES ('finalize_expired_exams', '2000-01-01 00:00:00');
+
 
 
 -- ============================================================
