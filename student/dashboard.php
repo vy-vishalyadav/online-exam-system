@@ -205,9 +205,21 @@ $exams = mysqli_stmt_get_result($stmt);
                                     You have an ongoing attempt. Draft answers are saved.
                                 </div>
                             </div>
+                        <?php elseif ($e_at && $now_ts > $e_at): ?>
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-lock-fill text-secondary me-1"></i><span class="fw-semibold text-secondary">Exam Closed</span> &bull; Scheduled window has ended.
+                            </p>
+                        <?php elseif ($s_at && $now_ts < $s_at): ?>
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-calendar-event text-info me-1"></i><span class="fw-semibold text-info">Upcoming Exam</span> &bull; Opens <?php echo date('d M, h:i A', $s_at); ?>.
+                            </p>
+                        <?php elseif ($q_count === 0): ?>
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-exclamation-circle text-warning me-1"></i>No questions available yet.
+                            </p>
                         <?php else: ?>
                             <p class="text-muted small mb-3">
-                                Not started yet.
+                                <i class="bi bi-play-circle text-primary me-1"></i>Not started yet &bull; Click <strong>Start Exam</strong> below to begin.
                             </p>
                         <?php endif; ?>
                         </div>
@@ -396,6 +408,10 @@ function updateScheduleBadges() {
                     var totalMarks = card.getAttribute('data-total-marks') || '0';
 
                     if (!isSubmitted && actionBox && actionBox.querySelector('.btn-sched-locked')) {
+                        var middleBox = document.getElementById('examMiddleStatus_' + examId);
+                        if (middleBox && !isInProgress) {
+                            middleBox.innerHTML = '<p class="text-muted small mb-3"><i class="bi bi-play-circle text-primary me-1"></i>Not started yet &bull; Click <strong>Start Exam</strong> below to begin.</p>';
+                        }
                         if (qCount > 0) {
                             if (isInProgress) {
                                 actionBox.innerHTML = '<a href="exam.php?id=' + examId + '" class="btn btn-warning text-dark w-100 fw-bold shadow-sm py-2"><i class="bi bi-play-circle-fill me-1"></i> Resume Exam</a>';
@@ -414,9 +430,15 @@ function updateScheduleBadges() {
                 badge.innerHTML = '<i class="bi bi-lock me-1"></i>Closed';
                 if (card) {
                     var actionBox = document.getElementById('examAction_' + examId);
+                    var middleBox = document.getElementById('examMiddleStatus_' + examId);
                     var isSubmitted = card.getAttribute('data-submitted') === '1';
-                    if (!isSubmitted && actionBox) {
-                        actionBox.innerHTML = '<button class="btn btn-secondary w-100 fw-bold py-2" disabled><i class="bi bi-lock me-1"></i> Exam Closed</button>';
+                    if (!isSubmitted) {
+                        if (middleBox) {
+                            middleBox.innerHTML = '<p class="text-muted small mb-3"><i class="bi bi-lock-fill text-secondary me-1"></i><span class="fw-semibold text-secondary">Exam Closed</span> &bull; Scheduled window has ended.</p>';
+                        }
+                        if (actionBox) {
+                            actionBox.innerHTML = '<button class="btn btn-secondary w-100 fw-bold py-2" disabled><i class="bi bi-lock me-1"></i> Exam Closed</button>';
+                        }
                     }
                 }
             }
