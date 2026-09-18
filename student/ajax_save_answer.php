@@ -91,6 +91,9 @@ if ($q_chk) {
         echo json_encode(['ok' => false, 'error' => 'invalid_question']);
         exit;
     }
+} else {
+    echo json_encode(['ok' => false, 'error' => 'db_error']);
+    exit;
 }
 
 // Upsert draft answer (INSERT … ON DUPLICATE KEY UPDATE)
@@ -108,4 +111,9 @@ mysqli_stmt_bind_param($stmt, "iiis", $student_id, $exam_id, $question_id, $answ
 $ok = mysqli_stmt_execute($stmt);
 mysqli_stmt_close($stmt);
 
-echo json_encode(['ok' => $ok, 'saved_at' => date('H:i:s')]);
+if (!$ok) {
+    echo json_encode(['ok' => false, 'error' => 'save_failed']);
+    exit;
+}
+
+echo json_encode(['ok' => true, 'saved_at' => date('H:i:s')]);

@@ -16,6 +16,282 @@ $student_id      = (int)$_SESSION['student_id'];
 $submission_review = null;
 $error_msg       = "";
 
+/**
+ * Atomically finalize an exam submission (used by both manual POST and timeout auto-submit)
+ *
+ * Wraps question scoring, validation, and all database writes inside an atomic transaction
+ * with row-level locking (FOR UPDATE) to prevent race conditions and duplicate results.
+ *
+ * @param mysqli $conn
+ * @param int $student_id
+ * @param int $exam_id
+ * @param array $user_mcq_answers
+ * @param array $user_desc_answers
+ * @param bool $is_timeout
+ * @return array
+ */
+function finalizeExamSubmission(mysqli $conn, int $student_id, int $exam_id, array $user_mcq_answers = [], array $user_desc_answers = [], bool $is_timeout = false): array {
+    // 1. Fetch exam session and exam metadata
+    $ss = mysqli_prepare($conn,
+        "SELECT es.submitted, es.duration_minutes, es.assigned_questions,
+                TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
+                e.title, e.end_at, e.result_mode, e.duration_minutes AS exam_duration_minutes,
+                TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
+         FROM exam_sessions es
+         JOIN exams e ON e.id = es.exam_id
+         WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
+    if (!$ss) {
+        return ['success' => false, 'error' => 'db_error'];
+    }
+    mysqli_stmt_bind_param($ss, "ii", $student_id, $exam_id);
+    mysqli_stmt_execute($ss);
+    $ss_res = mysqli_stmt_get_result($ss);
+    $ss_row = $ss_res ? mysqli_fetch_assoc($ss_res) : null;
+    mysqli_stmt_close($ss);
+
+    if (!$ss_row) {
+        return ['success' => false, 'error' => 'invalid_session'];
+    }
+    if ((int)$ss_row['submitted'] === 1) {
+        return ['success' => false, 'already_submitted' => true];
+    }
+
+    // 2. Fetch assigned questions in order or all questions
+    $questions_to_score = [];
+    $assigned_ids = [];
+    if (!empty($ss_row['assigned_questions'])) {
+        $assigned_ids = array_filter(array_map('intval', explode(',', $ss_row['assigned_questions'])));
+    }
+    if (!empty($assigned_ids)) {
+        $in_clause = implode(',', $assigned_ids);
+        $qs = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$exam_id);
+        $q_map = [];
+        if ($qs) {
+            while ($row = mysqli_fetch_assoc($qs)) {
+                $q_map[(int)$row['id']] = $row;
+            }
+        }
+        foreach ($assigned_ids as $aid) {
+            if (isset($q_map[$aid])) {
+                $questions_to_score[] = $q_map[$aid];
+            }
+        }
+    } else {
+        $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+        if ($q_stmt) {
+            mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
+            mysqli_stmt_execute($q_stmt);
+            $qr = mysqli_stmt_get_result($q_stmt);
+            if ($qr) {
+                while ($row = mysqli_fetch_assoc($qr)) {
+                    $questions_to_score[] = $row;
+                }
+            }
+            mysqli_stmt_close($q_stmt);
+        }
+    }
+
+    // 3. Retrieve option maps from session (shuffled option labels)
+    $option_maps = $_SESSION['option_maps_' . $exam_id] ?? [];
+    unset($_SESSION['option_maps_' . $exam_id]);
+
+    // 4. Fallback: if answers are empty (timeout auto-submit or empty POST), load from draft_answers
+    if (empty($user_mcq_answers) && empty($user_desc_answers)) {
+        $df = mysqli_prepare($conn, "SELECT question_id, answer FROM draft_answers WHERE student_id = ? AND exam_id = ?");
+        if ($df) {
+            mysqli_stmt_bind_param($df, "ii", $student_id, $exam_id);
+            mysqli_stmt_execute($df);
+            $df_res = mysqli_stmt_get_result($df);
+            if ($df_res) {
+                while ($dr = mysqli_fetch_assoc($df_res)) {
+                    $qid = (int)$dr['question_id'];
+                    $ans = $dr['answer'];
+                    if (in_array(strtoupper($ans), ['A', 'B', 'C', 'D']) && strlen($ans) <= 1) {
+                        $user_mcq_answers[$qid]  = strtoupper($ans);
+                    } else {
+                        $user_desc_answers[$qid] = $ans;
+                    }
+                }
+            }
+            mysqli_stmt_close($df);
+        }
+    }
+
+    // 5. Score answers
+    $total_questions  = 0;
+    $mcq_count        = 0;
+    $desc_count       = 0;
+    $correct_count    = 0;
+    $earned_mcq_marks = 0.0;
+    $total_exam_marks = 0.0;
+    $recorded_answers = [];
+
+    if (!empty($questions_to_score)) {
+        foreach ($questions_to_score as $q) {
+            $total_questions++;
+            $q_id    = (int)$q['id'];
+            $q_type  = $q['question_type'] ?? 'mcq';
+            $q_marks = (isset($q['marks']) && (float)$q['marks'] > 0) ? (float)$q['marks'] : ($q_type === 'descriptive' ? 5.0 : 1.0);
+            $total_exam_marks += $q_marks;
+
+            if ($q_type === 'descriptive') {
+                $desc_count++;
+                $desc_text = trim($user_desc_answers[$q_id] ?? '');
+                if (strlen($desc_text) > 5000) {
+                    $desc_text = substr($desc_text, 0, 5000);
+                }
+                $recorded_answers[] = [
+                    'question_id'    => $q_id,
+                    'question_type'  => 'descriptive',
+                    'question_text'  => $q['question_text'],
+                    'user_ans'       => $desc_text,
+                    'is_correct'     => null,
+                    'marks'          => 0.0,
+                    'question_marks' => $q_marks
+                ];
+            } else {
+                $mcq_count++;
+                $raw_ans  = strtoupper(trim($user_mcq_answers[$q_id] ?? ''));
+                $user_ans = in_array($raw_ans, ['A', 'B', 'C', 'D']) ? $raw_ans : null;
+
+                $original_correct = strtoupper(trim($q['correct_option'] ?? 'A'));
+                $shuffled_correct = !empty($option_maps[$q_id]) ? ($option_maps[$q_id]['correct'] ?? $original_correct) : $original_correct;
+                $is_correct       = ($user_ans !== null && $user_ans === $shuffled_correct);
+                $earned_marks     = $is_correct ? $q_marks : 0.0;
+                if ($is_correct) {
+                    $correct_count++;
+                    $earned_mcq_marks += $q_marks;
+                }
+
+                $recorded_answers[] = [
+                    'question_id'    => $q_id,
+                    'question_type'  => 'mcq',
+                    'question_text'  => $q['question_text'],
+                    'option_a'       => $q['option_a'],
+                    'option_b'       => $q['option_b'],
+                    'option_c'       => $q['option_c'],
+                    'option_d'       => $q['option_d'],
+                    'user_ans'       => $user_ans,
+                    'correct_ans'    => $original_correct,
+                    'is_correct'     => $is_correct ? 1 : 0,
+                    'marks'          => $earned_marks,
+                    'question_marks' => $q_marks
+                ];
+            }
+        }
+    }
+
+    $exam_mode   = $ss_row['result_mode'] ?? 'instant';
+    $status      = ($desc_count > 0 || $exam_mode === 'pending') ? 'pending' : 'published';
+    $final_marks = round((float)$earned_mcq_marks, 2);
+    $passed      = ($total_exam_marks > 0) ? (($final_marks / $total_exam_marks) >= 0.5) : false;
+
+    // 6. Unified Atomic Transaction with row-level lock
+    mysqli_begin_transaction($conn);
+    try {
+        // Lock row FOR UPDATE to prevent race conditions or double submission
+        $lock_stmt = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id = ? AND exam_id = ? FOR UPDATE");
+        if (!$lock_stmt) {
+            throw new Exception("Lock prepare failed: " . mysqli_error($conn));
+        }
+        mysqli_stmt_bind_param($lock_stmt, "ii", $student_id, $exam_id);
+        mysqli_stmt_execute($lock_stmt);
+        $lock_res = mysqli_stmt_get_result($lock_stmt);
+        $lock_row = $lock_res ? mysqli_fetch_assoc($lock_res) : null;
+        mysqli_stmt_close($lock_stmt);
+
+        if ($lock_row && (int)$lock_row['submitted'] === 1) {
+            mysqli_rollback($conn);
+            return ['success' => false, 'already_submitted' => true];
+        }
+
+        // Insert into results
+        $ins_res = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
+        if (!$ins_res) {
+            throw new Exception("Results insert prepare failed: " . mysqli_error($conn));
+        }
+        mysqli_stmt_bind_param($ins_res, "iids", $student_id, $exam_id, $final_marks, $status);
+        if (!mysqli_stmt_execute($ins_res)) {
+            $err = mysqli_stmt_error($ins_res);
+            mysqli_stmt_close($ins_res);
+            throw new Exception("Results insert execute failed: " . $err);
+        }
+        $result_id = (int)mysqli_insert_id($conn);
+        mysqli_stmt_close($ins_res);
+
+        if ($result_id <= 0) {
+            throw new Exception("Invalid result ID generated");
+        }
+
+        // Insert student_answers
+        $sa_stmt = mysqli_prepare($conn, "INSERT INTO student_answers (result_id, student_id, exam_id, question_id, user_answer, is_correct, marks_awarded) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        if (!$sa_stmt) {
+            throw new Exception("Student answers insert prepare failed: " . mysqli_error($conn));
+        }
+        foreach ($recorded_answers as $ans) {
+            $qid     = (int)$ans['question_id'];
+            $u_ans   = $ans['user_ans'] ?? '';
+            $is_c    = $ans['is_correct'];
+            $is_c_b  = ($is_c === null) ? null : (int)$is_c;
+            $m_award = (float)$ans['marks'];
+            mysqli_stmt_bind_param($sa_stmt, "iiiisid", $result_id, $student_id, $exam_id, $qid, $u_ans, $is_c_b, $m_award);
+            if (!mysqli_stmt_execute($sa_stmt)) {
+                $err = mysqli_stmt_error($sa_stmt);
+                mysqli_stmt_close($sa_stmt);
+                throw new Exception("Student answers insert execute failed: " . $err);
+            }
+        }
+        mysqli_stmt_close($sa_stmt);
+
+        // Update exam_sessions
+        $upd = mysqli_prepare($conn, "UPDATE exam_sessions SET submitted = 1, time_taken_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW()) WHERE student_id = ? AND exam_id = ?");
+        if (!$upd) {
+            throw new Exception("Session update prepare failed: " . mysqli_error($conn));
+        }
+        mysqli_stmt_bind_param($upd, "ii", $student_id, $exam_id);
+        if (!mysqli_stmt_execute($upd)) {
+            $err = mysqli_stmt_error($upd);
+            mysqli_stmt_close($upd);
+            throw new Exception("Session update execute failed: " . $err);
+        }
+        mysqli_stmt_close($upd);
+
+        // Clean up draft_answers
+        $del = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id = ? AND exam_id = ?");
+        if ($del) {
+            mysqli_stmt_bind_param($del, "ii", $student_id, $exam_id);
+            mysqli_stmt_execute($del);
+            mysqli_stmt_close($del);
+        }
+
+        mysqli_commit($conn);
+
+        $review = [
+            'result_id'       => $result_id,
+            'exam_title'      => $ss_row['title'] ?? 'Examination',
+            'status'          => $status,
+            'has_descriptive' => $desc_count > 0,
+            'desc_count'      => $desc_count,
+            'total'           => $total_questions,
+            'total_marks'     => $total_exam_marks,
+            'mcq_count'       => $mcq_count,
+            'correct'         => $correct_count,
+            'wrong'           => max(0, $mcq_count - $correct_count),
+            'score'           => $final_marks,
+            'passed'          => $passed,
+            'items'           => $recorded_answers,
+            'timed_out'       => $is_timeout
+        ];
+
+        return ['success' => true, 'result_id' => $result_id, 'review' => $review];
+
+    } catch (Throwable $e) {
+        mysqli_rollback($conn);
+        error_log("[Exam Finalize Error] Student {$student_id}, Exam {$exam_id}: " . $e->getMessage());
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
 // ── Handle POST exam submission ───────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($_POST['submit_exam'])) {
     $exam_id = (int)$_POST['exam_id'];
@@ -37,15 +313,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
         // Consume token
         unset($_SESSION[$submit_token_key]);
 
-        // Phase 1: check server-side session hasn't been submitted already & validate elapsed time
+        // Validate elapsed time against schedule & allowed duration
         $ss = mysqli_prepare($conn,
-            "SELECT es.submitted, es.duration_minutes, es.assigned_questions,
+            "SELECT es.submitted, es.duration_minutes,
                     TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
                     e.end_at,
                     TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
              FROM exam_sessions es
              JOIN exams e ON e.id = es.exam_id
-             WHERE es.student_id=? AND es.exam_id=? LIMIT 1");
+             WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
         $ss_row = null;
         if ($ss) {
             mysqli_stmt_bind_param($ss, "ii", $student_id, $exam_id);
@@ -53,278 +329,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             $ss_res = mysqli_stmt_get_result($ss);
             $ss_row = $ss_res ? mysqli_fetch_assoc($ss_res) : null;
             mysqli_stmt_close($ss);
-            if ($ss_row && $ss_row['submitted']) {
+            if ($ss_row && (int)$ss_row['submitted'] === 1) {
                 $_SESSION['flash_already_submitted'] = "Your exam was already submitted.";
                 safe_redirect("result.php");
             }
         }
 
-        // Fetch exam
-        $stmt = mysqli_prepare($conn, "SELECT * FROM exams WHERE id = ? LIMIT 1");
-        mysqli_stmt_bind_param($stmt, "i", $exam_id);
-        mysqli_stmt_execute($stmt);
-        $res_exam = mysqli_stmt_get_result($stmt);
-        $exam     = ($res_exam ? mysqli_fetch_assoc($res_exam) : null);
-        mysqli_stmt_close($stmt);
+        $allowed_sec          = ((int)($ss_row['duration_minutes'] ?? 30)) * 60;
+        $elapsed_sec          = (int)($ss_row['elapsed_seconds'] ?? 0);
+        $is_window_passed     = (!empty($ss_row['end_at']) && (int)($ss_row['window_rem_sec'] ?? 0) < -30);
+        $is_duration_exceeded = ($elapsed_sec > ($allowed_sec + 30));
 
-        if ($exam) {
-            $questions_to_score = [];
-            $assigned_ids = [];
-            if (!empty($ss_row['assigned_questions'])) {
-                $assigned_ids = array_filter(array_map('intval', explode(',', $ss_row['assigned_questions'])));
-            }
-            if (!empty($assigned_ids)) {
-                $in_clause = implode(',', $assigned_ids);
-                $qs = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$exam_id);
-                $q_map = [];
-                if ($qs) {
-                    while ($row = mysqli_fetch_assoc($qs)) {
-                        $q_map[(int)$row['id']] = $row;
-                    }
-                }
-                foreach ($assigned_ids as $aid) {
-                    if (isset($q_map[$aid])) {
-                        $questions_to_score[] = $q_map[$aid];
-                    }
-                }
-            } else {
-                $q_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
-                if ($q_stmt) {
-                    mysqli_stmt_bind_param($q_stmt, "i", $exam_id);
-                    mysqli_stmt_execute($q_stmt);
-                    $qr = mysqli_stmt_get_result($q_stmt);
-                    if ($qr) {
-                        while ($row = mysqli_fetch_assoc($qr)) {
-                            $questions_to_score[] = $row;
-                        }
-                    }
-                    mysqli_stmt_close($q_stmt);
-                }
-            }
-            $total_questions = 0;
-            $mcq_count       = 0;
-            $desc_count      = 0;
-            $correct_count   = 0;
-            $recorded_answers = [];
-
-            // Phase 1: get option_maps from session (shuffled option labels)
-            $option_maps = $_SESSION['option_maps_' . $exam_id] ?? [];
-
-            // Server-authoritative timer validation:
-            // Check if submission exceeds allowed duration or schedule window (+30s network grace)
-            $allowed_sec = ((int)($ss_row['duration_minutes'] ?? $exam['duration_minutes'] ?? 30)) * 60;
-            $elapsed_sec = (int)($ss_row['elapsed_seconds'] ?? 0);
-            $is_window_passed = (!empty($ss_row['end_at']) && (int)($ss_row['window_rem_sec'] ?? 0) < -30);
-            $is_duration_exceeded = ($elapsed_sec > ($allowed_sec + 30));
-
-            if ($is_duration_exceeded || $is_window_passed) {
-                // Reject late POST answers — load drafts auto-saved before timer expiration
-                $user_mcq_answers  = [];
-                $user_desc_answers = [];
-            } else {
-                $user_mcq_answers  = $_POST['answer'] ?? [];
-                $user_desc_answers = $_POST['descriptive_answer'] ?? [];
-            }
-
-            // Phase 1: fallback — load from draft_answers if POST is empty (e.g. auto-submit or late submission)
-            if (empty($user_mcq_answers) && empty($user_desc_answers)) {
-                $df = mysqli_prepare($conn,
-                    "SELECT question_id, answer FROM draft_answers WHERE student_id=? AND exam_id=?");
-                if ($df) {
-                    mysqli_stmt_bind_param($df, "ii", $student_id, $exam_id);
-                    mysqli_stmt_execute($df);
-                    $df_res = mysqli_stmt_get_result($df);
-                    while ($dr = mysqli_fetch_assoc($df_res)) {
-                        $qid = (int)$dr['question_id'];
-                        $ans = $dr['answer'];
-                        // Determine if MCQ (single letter) or descriptive
-                        if (in_array(strtoupper($ans), ['A','B','C','D']) && strlen($ans) <= 1) {
-                            $user_mcq_answers[$qid]  = strtoupper($ans);
-                        } else {
-                            $user_desc_answers[$qid] = $ans;
-                        }
-                    }
-                    mysqli_stmt_close($df);
-                }
-            }
-
-            $earned_mcq_marks = 0;
-            $total_exam_marks = 0;
-
-            if (!empty($questions_to_score)) {
-                foreach ($questions_to_score as $q) {
-                    $total_questions++;
-                    $q_id   = $q['id'];
-                    $q_type = $q['question_type'] ?? 'mcq';
-                    $q_marks = isset($q['marks']) && (float)$q['marks'] > 0 ? (float)$q['marks'] : 1.00;
-                    $total_exam_marks += $q_marks;
-
-                    if ($q_type === 'descriptive') {
-                        $desc_count++;
-                        $desc_text = trim($user_desc_answers[$q_id] ?? '');
-                        if (strlen($desc_text) > 5000) $desc_text = substr($desc_text, 0, 5000);
-                        $recorded_answers[] = [
-                            'question_id'   => $q_id,
-                            'question_type' => 'descriptive',
-                            'question_text' => $q['question_text'],
-                            'user_ans'      => $desc_text,
-                            'is_correct'    => null,
-                            'marks'         => 0,
-                            'question_marks'=> $q_marks
-                        ];
-                    } else {
-                        $mcq_count++;
-                        $raw_ans  = strtoupper(trim($user_mcq_answers[$q_id] ?? ''));
-                        $user_ans = in_array($raw_ans, ['A','B','C','D']) ? $raw_ans : null;
-
-                        // Phase 1: use original correct_option (pre-shuffle) OR option_map if available
-                        $original_correct = strtoupper(trim($q['correct_option'] ?? ''));
-                        if (!empty($option_maps[$q_id])) {
-                            // The shuffled correct label is stored in option_maps
-                            $shuffled_correct = $option_maps[$q_id]['correct'] ?? $original_correct;
-                        } else {
-                            $shuffled_correct = $original_correct;
-                        }
-                        $is_correct = ($user_ans !== null && $user_ans === $shuffled_correct);
-                        $earned_marks = $is_correct ? $q_marks : 0;
-                        if ($is_correct) {
-                            $correct_count++;
-                            $earned_mcq_marks += $q_marks;
-                        }
-
-                        $recorded_answers[] = [
-                            'question_id'   => $q_id,
-                            'question_type' => 'mcq',
-                            'question_text' => $q['question_text'],
-                            'option_a'      => $q['option_a'],
-                            'option_b'      => $q['option_b'],
-                            'option_c'      => $q['option_c'],
-                            'option_d'      => $q['option_d'],
-                            'user_ans'      => $user_ans,
-                            'correct_ans'   => $original_correct,
-                            'is_correct'    => $is_correct ? 1 : 0,
-                            'marks'         => $earned_marks,
-                            'question_marks'=> $q_marks
-                        ];
-                    }
-                }
-            }
-
-            // Clear option maps from session after use
-            unset($_SESSION['option_maps_' . $exam_id]);
-
-            $exam_mode = $exam['result_mode'] ?? 'instant';
-            if ($desc_count > 0 || $exam_mode === 'pending') {
-                $status = 'pending';
-            } else {
-                $status = 'published';
-            }
-
-            // Score is raw marks awarded (descriptive evaluated later by instructor)
-            $final_marks = round((float)$earned_mcq_marks, 2);
-
-            // Transaction-wrapped atomic submission write
-            mysqli_begin_transaction($conn);
-            $tx_success = false;
-
-            try {
-                // 1. Lock the session row FOR UPDATE to prevent race conditions / double submission
-                $lock_stmt = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id=? AND exam_id=? FOR UPDATE");
-                if ($lock_stmt) {
-                    mysqli_stmt_bind_param($lock_stmt, "ii", $student_id, $exam_id);
-                    mysqli_stmt_execute($lock_stmt);
-                    $lock_res = mysqli_stmt_get_result($lock_stmt);
-                    $lock_row = $lock_res ? mysqli_fetch_assoc($lock_res) : null;
-                    mysqli_stmt_close($lock_stmt);
-
-                    if ($lock_row && (int)$lock_row['submitted'] === 1) {
-                        mysqli_rollback($conn);
-                        $_SESSION['flash_already_submitted'] = "Your exam was already submitted.";
-                        safe_redirect("result.php");
-                    }
-                }
-
-                // 2. Save result
-                $result_id = 0;
-                $stmt = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
-                if (!$stmt) {
-                    throw new Exception("Failed to prepare results insert: " . mysqli_error($conn));
-                }
-                mysqli_stmt_bind_param($stmt, "iids", $student_id, $exam_id, $final_marks, $status);
-                if (!mysqli_stmt_execute($stmt)) {
-                    throw new Exception("Failed to execute results insert: " . mysqli_stmt_error($stmt));
-                }
-                $result_id = (int)mysqli_insert_id($conn);
-                mysqli_stmt_close($stmt);
-
-                if ($result_id <= 0) {
-                    throw new Exception("Invalid result_id generated.");
-                }
-
-                // 3. Save individual answers
-                foreach ($recorded_answers as $ans) {
-                    $qid     = (int)$ans['question_id'];
-                    $u_ans   = $ans['user_ans'] ?? '';
-                    $is_c    = $ans['is_correct'];
-                    $m_award = (float)$ans['marks'];
-
-                    $a_stmt = mysqli_prepare($conn, "INSERT INTO student_answers (result_id, student_id, exam_id, question_id, user_answer, is_correct, marks_awarded) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    if ($a_stmt) {
-                        $is_c_bind = ($is_c === null) ? null : (int)$is_c;
-                        mysqli_stmt_bind_param($a_stmt, "iiiisid", $result_id, $student_id, $exam_id, $qid, $u_ans, $is_c_bind, $m_award);
-                        mysqli_stmt_execute($a_stmt);
-                        mysqli_stmt_close($a_stmt);
-                    }
-                }
-
-                // 4. Mark exam session as submitted + record time taken
-                $upd = mysqli_prepare($conn,
-                    "UPDATE exam_sessions SET submitted=1,
-                     time_taken_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
-                     WHERE student_id=? AND exam_id=?");
-                if ($upd) {
-                    mysqli_stmt_bind_param($upd, "ii", $student_id, $exam_id);
-                    mysqli_stmt_execute($upd);
-                    mysqli_stmt_close($upd);
-                }
-
-                // 5. Clean up draft answers (no longer needed)
-                $del = mysqli_prepare($conn,
-                    "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
-                if ($del) {
-                    mysqli_stmt_bind_param($del, "ii", $student_id, $exam_id);
-                    mysqli_stmt_execute($del);
-                    mysqli_stmt_close($del);
-                }
-
-                mysqli_commit($conn);
-                $tx_success = true;
-            } catch (Exception $e) {
-                mysqli_rollback($conn);
-                error_log("[Exam Submission Failed] Student {$student_id}, Exam {$exam_id}: " . $e->getMessage());
-                $error_msg = "An error occurred while finalizing your submission. Please notify your instructor.";
-            }
-
-            if ($tx_success && $result_id > 0) {
-                // PRG redirect
-                $_SESSION['submission_review'] = [
-                    'result_id'       => $result_id,
-                    'exam_title'      => $exam['title'],
-                    'status'          => $status,
-                    'has_descriptive' => $desc_count > 0,
-                    'desc_count'      => $desc_count,
-                    'total'           => $total_questions,
-                    'total_marks'     => $total_exam_marks,
-                    'mcq_count'       => $mcq_count,
-                    'correct'         => $correct_count,
-                    'wrong'           => max(0, $mcq_count - $correct_count),
-                    'score'           => $final_marks,
-                    'items'           => $recorded_answers
-                ];
-                safe_redirect("result.php");
-            }
+        if ($is_duration_exceeded || $is_window_passed) {
+            // Reject late POST answers — load drafts auto-saved before timer expiration
+            $user_mcq_answers  = [];
+            $user_desc_answers = [];
         } else {
-            $error_msg = "Invalid exam submission.";
+            $user_mcq_answers  = $_POST['answer'] ?? [];
+            $user_desc_answers = $_POST['descriptive_answer'] ?? [];
+        }
+
+        $sub_res = finalizeExamSubmission($conn, $student_id, $exam_id, $user_mcq_answers, $user_desc_answers, false);
+
+        if (!empty($sub_res['already_submitted'])) {
+            $_SESSION['flash_already_submitted'] = "Your exam was already submitted.";
+            safe_redirect("result.php");
+        } elseif (!empty($sub_res['success'])) {
+            $_SESSION['submission_review'] = $sub_res['review'];
+            safe_redirect("result.php");
+        } else {
+            $error_msg = "An error occurred while finalizing your submission. Please notify your instructor.";
         }
     }
 }
@@ -336,29 +370,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
     if ($to_exam_id > 0) {
         // 1. Verify session exists, is not already submitted, and fetch timing
         $ts = mysqli_prepare($conn,
-            "SELECT es.submitted, es.duration_minutes, es.assigned_questions,
+            "SELECT es.submitted, es.duration_minutes,
                     TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
                     e.end_at,
                     TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
              FROM exam_sessions es
              JOIN exams e ON e.id = es.exam_id
-             WHERE es.student_id=? AND es.exam_id=? LIMIT 1");
-        mysqli_stmt_bind_param($ts, "ii", $student_id, $to_exam_id);
-        mysqli_stmt_execute($ts);
-        $ts_row = mysqli_fetch_assoc(mysqli_stmt_get_result($ts));
-        mysqli_stmt_close($ts);
+             WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
+        $ts_row = null;
+        if ($ts) {
+            mysqli_stmt_bind_param($ts, "ii", $student_id, $to_exam_id);
+            mysqli_stmt_execute($ts);
+            $ts_res = mysqli_stmt_get_result($ts);
+            $ts_row = $ts_res ? mysqli_fetch_assoc($ts_res) : null;
+            mysqli_stmt_close($ts);
+        }
 
-        if ($ts_row && !$ts_row['submitted']) {
+        if ($ts_row && !(int)$ts_row['submitted']) {
             // 2. Check violation strikes count
             $v_chk = mysqli_prepare($conn,
                 "SELECT COUNT(*) AS v_cnt FROM exam_violations 
                  WHERE student_id = ? AND exam_id = ? 
                     AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
-            mysqli_stmt_bind_param($v_chk, "ii", $student_id, $to_exam_id);
-            mysqli_stmt_execute($v_chk);
-            $v_res = mysqli_fetch_assoc(mysqli_stmt_get_result($v_chk));
-            mysqli_stmt_close($v_chk);
-            $v_count = (int)($v_res['v_cnt'] ?? 0);
+            $v_count = 0;
+            if ($v_chk) {
+                mysqli_stmt_bind_param($v_chk, "ii", $student_id, $to_exam_id);
+                mysqli_stmt_execute($v_chk);
+                $v_res = mysqli_stmt_get_result($v_chk);
+                $v_row = $v_res ? mysqli_fetch_assoc($v_res) : null;
+                $v_count = (int)($v_row['v_cnt'] ?? 0);
+                mysqli_stmt_close($v_chk);
+            }
 
             // 3. Verify server-authoritative expiration: timer expired, schedule ended, or 3 strikes
             $elapsed_sec     = (int)($ts_row['elapsed_seconds'] ?? 0);
@@ -368,130 +410,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['timeout']) && isset($_G
             $is_disqualified = ($v_count >= 3);
 
             if (!$is_time_up && !$is_window_up && !$is_disqualified) {
-                // Premature trigger without valid expiry — prevent unauthorized termination
+                // Premature trigger without valid expiry — redirect back to exam
                 header("Location: exam.php?id={$to_exam_id}");
                 exit;
             }
 
-            // Load draft answers and score them
-            $to_exam_stmt = mysqli_prepare($conn, "SELECT * FROM exams WHERE id=? LIMIT 1");
-            mysqli_stmt_bind_param($to_exam_stmt, "i", $to_exam_id);
-            mysqli_stmt_execute($to_exam_stmt);
-            $to_exam = mysqli_fetch_assoc(mysqli_stmt_get_result($to_exam_stmt));
-            mysqli_stmt_close($to_exam_stmt);
-
-            if ($to_exam) {
-                $df = mysqli_prepare($conn, "SELECT question_id, answer FROM draft_answers WHERE student_id=? AND exam_id=?");
-                mysqli_stmt_bind_param($df, "ii", $student_id, $to_exam_id);
-                mysqli_stmt_execute($df);
-                $df_res = mysqli_stmt_get_result($df);
-                $drafts = [];
-                while ($dr = mysqli_fetch_assoc($df_res)) $drafts[(int)$dr['question_id']] = $dr['answer'];
-                mysqli_stmt_close($df);
-
-                $option_maps = $_SESSION['option_maps_' . $to_exam_id] ?? [];
-                $to_questions = [];
-                $to_assigned_ids = [];
-                if (!empty($ts_row['assigned_questions'])) {
-                    $to_assigned_ids = array_filter(array_map('intval', explode(',', $ts_row['assigned_questions'])));
-                }
-                if (!empty($to_assigned_ids)) {
-                    $in_clause = implode(',', $to_assigned_ids);
-                    $qs = mysqli_query($conn, "SELECT * FROM questions WHERE id IN ($in_clause) AND exam_id = " . (int)$to_exam_id);
-                    $q_map = [];
-                    if ($qs) {
-                        while ($row = mysqli_fetch_assoc($qs)) {
-                            $q_map[(int)$row['id']] = $row;
-                        }
-                    }
-                    foreach ($to_assigned_ids as $aid) {
-                        if (isset($q_map[$aid])) {
-                            $to_questions[] = $q_map[$aid];
-                        }
-                    }
-                } else {
-                    $qs_stmt = mysqli_prepare($conn, "SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
-                    if ($qs_stmt) {
-                        mysqli_stmt_bind_param($qs_stmt, "i", $to_exam_id);
-                        mysqli_stmt_execute($qs_stmt);
-                        $qs_res = mysqli_stmt_get_result($qs_stmt);
-                        if ($qs_res) {
-                            while ($row = mysqli_fetch_assoc($qs_res)) {
-                                $to_questions[] = $row;
-                            }
-                        }
-                        mysqli_stmt_close($qs_stmt);
-                    }
-                }
-                $total_q = $correct_c = $desc_c = $mcq_c = 0;
-                $earned_mcq_marks = 0.0;
-                $total_exam_marks = 0.0;
-                $rec_answers = [];
-                if (!empty($to_questions)) {
-                    foreach ($to_questions as $q) {
-                    $total_q++;
-                    $q_type = $q['question_type'] ?? 'mcq';
-                    $q_marks = isset($q['marks']) && (float)$q['marks'] > 0 ? (float)$q['marks'] : ($q_type === 'descriptive' ? 5.0 : 1.0);
-                    $total_exam_marks += $q_marks;
-                    $ans    = $drafts[$q['id']] ?? '';
-                    if ($q_type === 'descriptive') {
-                        $desc_c++;
-                        $rec_answers[] = ['question_id'=>$q['id'],'question_type'=>'descriptive','question_text'=>$q['question_text'],'user_ans'=>$ans,'is_correct'=>null,'marks'=>0,'question_marks'=>$q_marks];
-                    } else {
-                        $mcq_c++;
-                        $raw = strtoupper(trim($ans));
-                        $user_a = in_array($raw, ['A','B','C','D']) ? $raw : null;
-                        $orig_correct = strtoupper($q['correct_option'] ?? 'A');
-                        $shuffled_correct = !empty($option_maps[$q['id']]) ? ($option_maps[$q['id']]['correct'] ?? $orig_correct) : $orig_correct;
-                        $is_c = ($user_a !== null && $user_a === $shuffled_correct);
-                        $earned_marks = $is_c ? $q_marks : 0.0;
-                        if ($is_c) {
-                            $correct_c++;
-                            $earned_mcq_marks += $q_marks;
-                        }
-                        $rec_answers[] = ['question_id'=>$q['id'],'question_type'=>'mcq','question_text'=>$q['question_text'],'option_a'=>$q['option_a'],'option_b'=>$q['option_b'],'option_c'=>$q['option_c'],'option_d'=>$q['option_d'],'user_ans'=>$user_a,'correct_ans'=>$orig_correct,'is_correct'=>$is_c?1:0,'marks'=>$earned_marks,'question_marks'=>$q_marks];
-                    }
-                }
-                }
-                if ($qs_stmt) { mysqli_stmt_close($qs_stmt); }
-                unset($_SESSION['option_maps_' . $to_exam_id]);
-
-                $status_to = ($desc_c > 0 || ($to_exam['result_mode'] ?? 'instant') === 'pending') ? 'pending' : 'published';
-                // Score is raw marks awarded (descriptive evaluated later by instructor), matching POST handler at line 174
-                $score_to  = round((float)$earned_mcq_marks, 2);
-
-                $ins_r = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?,?,?,?,NOW())");
-                mysqli_stmt_bind_param($ins_r, "iids", $student_id, $to_exam_id, $score_to, $status_to);
-                $new_rid = 0;
-                if (mysqli_stmt_execute($ins_r)) { $new_rid = (int)mysqli_insert_id($conn); }
-                mysqli_stmt_close($ins_r);
-
-                if ($new_rid) {
-                    foreach ($rec_answers as $ra) {
-                        $sa = mysqli_prepare($conn, "INSERT INTO student_answers (result_id,student_id,exam_id,question_id,user_answer,is_correct,marks_awarded) VALUES (?,?,?,?,?,?,?)");
-                        if ($sa) {
-                            $ic = $ra['is_correct']; $ma = (float)$ra['marks'];
-                            mysqli_stmt_bind_param($sa, "iiiisid", $new_rid, $student_id, $to_exam_id, $ra['question_id'], $ra['user_ans'], $ic, $ma);
-                            mysqli_stmt_execute($sa); mysqli_stmt_close($sa);
-                        }
-                    }
-                    $upd = mysqli_prepare($conn, "UPDATE exam_sessions SET submitted=1, time_taken_seconds=TIMESTAMPDIFF(SECOND,started_at,NOW()) WHERE student_id=? AND exam_id=?");
-                    mysqli_stmt_bind_param($upd, "ii", $student_id, $to_exam_id);
-                    mysqli_stmt_execute($upd); mysqli_stmt_close($upd);
-
-                    $cdel = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
-                    mysqli_stmt_bind_param($cdel, "ii", $student_id, $to_exam_id);
-                    mysqli_stmt_execute($cdel); mysqli_stmt_close($cdel);
-
-                    $passed = ($total_exam_marks > 0) ? (($score_to / $total_exam_marks) >= 0.5) : false;
-                    $_SESSION['submission_review'] = [
-                        'result_id'=>$new_rid,'exam_title'=>$to_exam['title'],'status'=>$status_to,
-                        'has_descriptive'=>$desc_c>0,'desc_count'=>$desc_c,'total'=>$total_q,
-                        'total_marks'=>$total_exam_marks,
-                        'mcq_count'=>$mcq_c,'correct'=>$correct_c,'wrong'=>max(0, $mcq_c - $correct_c),'score'=>$score_to,
-                        'passed'=>$passed,'items'=>$rec_answers,'timed_out'=>true
-                    ];
-                }
+            // Finalize submission atomically using the drafts
+            $sub_res = finalizeExamSubmission($conn, $student_id, $to_exam_id, [], [], true);
+            if (!empty($sub_res['success'])) {
+                $_SESSION['submission_review'] = $sub_res['review'];
             }
         }
         safe_redirect("result.php");

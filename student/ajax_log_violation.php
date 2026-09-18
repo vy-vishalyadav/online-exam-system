@@ -43,6 +43,9 @@ if ($sess_chk) {
         echo json_encode(['ok' => false, 'error' => 'invalid_session']);
         exit;
     }
+} else {
+    echo json_encode(['ok' => false, 'error' => 'db_error']);
+    exit;
 }
 
 // Get real IP
@@ -71,12 +74,15 @@ if ($dup_check) {
         $cnt_stmt = mysqli_prepare($conn,
             "SELECT COUNT(*) as cnt FROM exam_violations
              WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
-        mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
-        mysqli_stmt_execute($cnt_stmt);
-        $cnt_res = mysqli_stmt_get_result($cnt_stmt);
-        $cnt_row = mysqli_fetch_assoc($cnt_res);
-        $count   = (int)($cnt_row['cnt'] ?? 0);
-        mysqli_stmt_close($cnt_stmt);
+        $count = 0;
+        if ($cnt_stmt) {
+            mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
+            mysqli_stmt_execute($cnt_stmt);
+            $cnt_res = mysqli_stmt_get_result($cnt_stmt);
+            $cnt_row = $cnt_res ? mysqli_fetch_assoc($cnt_res) : null;
+            $count   = (int)($cnt_row['cnt'] ?? 0);
+            mysqli_stmt_close($cnt_stmt);
+        }
         echo json_encode(['ok' => true, 'violation_count' => $count, 'duplicate' => true]);
         exit;
     }
@@ -96,15 +102,23 @@ mysqli_stmt_bind_param($stmt, "iissss", $student_id, $exam_id, $type, $detail, $
 $ok = mysqli_stmt_execute($stmt);
 mysqli_stmt_close($stmt);
 
+if (!$ok) {
+    echo json_encode(['ok' => false, 'error' => 'log_failed']);
+    exit;
+}
+
 // Return current violation count for this student+exam
 $cnt_stmt = mysqli_prepare($conn,
     "SELECT COUNT(*) as cnt FROM exam_violations
      WHERE student_id=? AND exam_id=? AND violation_type IN ('tab_switch','fullscreen_exit','exit_exam')");
-mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
-mysqli_stmt_execute($cnt_stmt);
-$cnt_res = mysqli_stmt_get_result($cnt_stmt);
-$cnt_row = mysqli_fetch_assoc($cnt_res);
-$count   = (int)($cnt_row['cnt'] ?? 0);
-mysqli_stmt_close($cnt_stmt);
+$count = 0;
+if ($cnt_stmt) {
+    mysqli_stmt_bind_param($cnt_stmt, "ii", $student_id, $exam_id);
+    mysqli_stmt_execute($cnt_stmt);
+    $cnt_res = mysqli_stmt_get_result($cnt_stmt);
+    $cnt_row = $cnt_res ? mysqli_fetch_assoc($cnt_res) : null;
+    $count   = (int)($cnt_row['cnt'] ?? 0);
+    mysqli_stmt_close($cnt_stmt);
+}
 
-echo json_encode(['ok' => $ok, 'violation_count' => $count]);
+echo json_encode(['ok' => true, 'violation_count' => $count]);

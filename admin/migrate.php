@@ -15,6 +15,12 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+$is_super_admin = (!empty($_SESSION['is_super_admin']) || (int)$_SESSION['admin_id'] === 1 || strtolower($_SESSION['admin_username'] ?? '') === 'admin');
+if (!$is_super_admin) {
+    http_response_code(403);
+    die("Access denied. Database schema synchronization is restricted to Super Administrators only.");
+}
+
 $migration_results = null;
 $error = "";
 

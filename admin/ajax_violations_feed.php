@@ -9,6 +9,9 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+// Release session lock immediately so polling does not block other admin tabs/actions
+session_write_close();
+
 include '../config/db.php';
 
 $filter_exam    = isset($_GET['exam_id'])    ? (int)$_GET['exam_id']    : 0;

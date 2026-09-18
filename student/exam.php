@@ -1146,12 +1146,23 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     // ── Debounced auto-save for descriptive (Optimized with dirty-check & flush) ─
     const lastServerSaved = <?php echo json_encode(array_map('strval', $draft_answers)); ?> || {};
     const saveTimers = {};
+    const saveAbortControllers = {};
+    const saveSequence = {};
 
     function autoSaveNow(qId, val) {
         // Skip redundant AJAX write if value hasn't changed since last server save
         if (lastServerSaved[qId] !== undefined && lastServerSaved[qId] === val) {
             return;
         }
+
+        // Abort any prior in-flight request for this question so older saves cannot arrive after this one
+        if (saveAbortControllers[qId]) {
+            try { saveAbortControllers[qId].abort(); } catch(e) {}
+        }
+        const controller = new AbortController();
+        saveAbortControllers[qId] = controller;
+
+        const currentSeq = (saveSequence[qId] = (saveSequence[qId] || 0) + 1);
 
         setSaveStatus('Saving…', '#888');
         const fd = new FormData();
@@ -1160,9 +1171,13 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         fd.append('answer',      val);
         fd.append('csrf_token',  CSRF_TOKEN);
 
-        fetch(SAVE_URL, { method: 'POST', body: fd })
+        fetch(SAVE_URL, { method: 'POST', body: fd, signal: controller.signal })
             .then(r => r.json())
             .then(d => {
+                // Ensure no newer save was dispatched while this request was traveling
+                if (currentSeq !== saveSequence[qId]) {
+                    return;
+                }
                 if (d.ok) {
                     lastServerSaved[qId] = val;
                     setSaveStatus(`✓ Saved ${d.saved_at}`, '#198754');
@@ -1172,7 +1187,14 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                     setSaveStatus('⚠ Save failed', '#dc3545');
                 }
             })
-            .catch(() => setSaveStatus('⚠ Offline — draft in browser', '#e67e22'));
+            .catch(err => {
+                if (err && err.name === 'AbortError') {
+                    return; // Normal cancellation of superseded request
+                }
+                if (currentSeq === saveSequence[qId]) {
+                    setSaveStatus('⚠ Offline — draft in browser', '#e67e22');
+                }
+            });
     }
 
     function flushAutosave(qId) {
