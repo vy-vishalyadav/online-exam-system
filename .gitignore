@@ -1,6 +1,10 @@
 # Deployment zip
 *.zip
 
+# Sensitive local config (credentials)
+config/config.local.php
+.env
+
 # OS junk
 .DS_Store
 Thumbs.db
@@ -17,4 +21,3 @@ error_log
 # Debug profile
 chrome-debug-profile/
 scratch/
-

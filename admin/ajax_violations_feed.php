@@ -69,13 +69,16 @@ if ($after_id > 0 && !$full_reload) {
     $fetch_types   .= 'i';
 }
 
+$is_delta = ($after_id > 0 && !$full_reload);
+$order_clause = $is_delta ? " ORDER BY v.id ASC LIMIT 100" : " ORDER BY v.id DESC LIMIT 500";
+
 $sql = "SELECT v.*, s.name AS student_name, s.email AS student_email, c.name AS class_name, e.title AS exam_title
         FROM exam_violations v
         JOIN students s ON v.student_id = s.id
         LEFT JOIN classes c ON s.class_id = c.id
         JOIN exams e    ON v.exam_id    = e.id"
     . ($fetch_where ? ' WHERE ' . implode(' AND ', $fetch_where) : '')
-    . " ORDER BY v.id DESC LIMIT " . ($after_id > 0 && !$full_reload ? '100' : '500');
+    . $order_clause;
 
 $stmt = mysqli_prepare($conn, $sql);
 $violations_list = [];

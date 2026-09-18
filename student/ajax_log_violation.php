@@ -30,6 +30,21 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
 // Release session lock immediately so other student requests do not block
 session_write_close();
 
+// Verify student has an active unsubmitted exam session for this exam
+$sess_chk = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id = ? AND exam_id = ? LIMIT 1");
+if ($sess_chk) {
+    mysqli_stmt_bind_param($sess_chk, "ii", $student_id, $exam_id);
+    mysqli_stmt_execute($sess_chk);
+    $s_res = mysqli_stmt_get_result($sess_chk);
+    $session_row = $s_res ? mysqli_fetch_assoc($s_res) : null;
+    mysqli_stmt_close($sess_chk);
+
+    if (!$session_row || (int)$session_row['submitted'] === 1) {
+        echo json_encode(['ok' => false, 'error' => 'invalid_session']);
+        exit;
+    }
+}
+
 // Get real IP
 $ip = $_SERVER['HTTP_X_FORWARDED_FOR']
     ?? $_SERVER['HTTP_CLIENT_IP']

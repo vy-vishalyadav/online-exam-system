@@ -528,11 +528,13 @@ async function fetchViolationsFeed(isManual = false) {
                 if (emptyRow) emptyRow.remove();
 
                 let hasSeriousNew = false;
-                // data.events are ordered DESC by id: iterate from oldest to newest so newest ends up at top
-                for (let i = data.events.length - 1; i >= 0; i--) {
+                let maxDeliveredId = lastKnownId;
+
+                // data.events are ordered ASC by id: iterate from oldest to newest so newest ends up at top
+                for (let i = 0; i < data.events.length; i++) {
                     const ev = data.events[i];
-                    if (ev.id > lastKnownId) {
-                        lastKnownId = ev.id;
+                    if (ev.id > maxDeliveredId) {
+                        maxDeliveredId = ev.id;
                     }
                     if (ev.is_serious) {
                         hasSeriousNew = true;
@@ -565,15 +567,16 @@ async function fetchViolationsFeed(isManual = false) {
                     tbody.insertBefore(tr, tbody.firstChild);
                 }
 
+                // Advance cursor only to highest delivered ID to guarantee zero missing events in bursts
+                if (maxDeliveredId > lastKnownId) {
+                    lastKnownId = maxDeliveredId;
+                }
+
                 if (hasSeriousNew) {
                     playAlertChime();
                 }
 
                 reindexViolationsTable();
-            }
-
-            if (data.max_id > lastKnownId) {
-                lastKnownId = data.max_id;
             }
 
             // Update Total Events Badge

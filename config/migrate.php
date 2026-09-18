@@ -9,14 +9,10 @@
  * Moves heavy DDL / schema alterations out of the normal HTTP request path.
  */
 
-// Allow execution from CLI or authenticated admin session
-$is_cli = (php_sapi_name() === 'cli');
-if (!$is_cli) {
-    session_start();
-    if (!isset($_SESSION['admin_id'])) {
-        http_response_code(403);
-        die("Unauthorized. Please log in as an administrator or run via CLI: php config/migrate.php\n");
-    }
+// If accessed directly from browser, redirect to the protected admin/migrate.php interface
+if (php_sapi_name() !== 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {
+    header("Location: ../admin/migrate.php");
+    exit;
 }
 
 require_once __DIR__ . '/db.php';
@@ -227,13 +223,8 @@ function run_migrations($conn) {
     return $messages;
 }
 
-$results = run_migrations($conn);
-
-if (!$is_cli) {
-    header('Content-Type: text/html; charset=utf-8');
-    echo "<h3>Database Migration Results</h3><ul>";
-    foreach ($results as $m) {
-        echo "<li>" . htmlspecialchars($m) . "</li>";
-    }
-    echo "</ul><p><a href='../admin/dashboard.php'>Back to Admin Dashboard</a></p>";
+// Auto-run if executed directly via CLI
+if (php_sapi_name() === 'cli' && realpath($_SERVER['argv'][0] ?? '') === realpath(__FILE__)) {
+    run_migrations($conn);
+    exit(0);
 }

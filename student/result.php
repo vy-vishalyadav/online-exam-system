@@ -223,37 +223,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
             // Score is raw marks awarded (descriptive evaluated later by instructor)
             $final_marks = round((float)$earned_mcq_marks, 2);
 
-            // Save result
-            $result_id = 0;
-            $stmt = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
-            if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "iids", $student_id, $exam_id, $final_marks, $status);
-                if (mysqli_stmt_execute($stmt)) {
-                    $result_id = (int)mysqli_insert_id($conn);
-                }
-                mysqli_stmt_close($stmt);
-            }
+            // Transaction-wrapped atomic submission write
+            mysqli_begin_transaction($conn);
+            $tx_success = false;
 
-            if ($result_id <= 0) {
-                $error_msg = "Failed to save your exam result. Please contact your instructor.";
-            } else {
-                // Save individual answers
+            try {
+                // 1. Lock the session row FOR UPDATE to prevent race conditions / double submission
+                $lock_stmt = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id=? AND exam_id=? FOR UPDATE");
+                if ($lock_stmt) {
+                    mysqli_stmt_bind_param($lock_stmt, "ii", $student_id, $exam_id);
+                    mysqli_stmt_execute($lock_stmt);
+                    $lock_res = mysqli_stmt_get_result($lock_stmt);
+                    $lock_row = $lock_res ? mysqli_fetch_assoc($lock_res) : null;
+                    mysqli_stmt_close($lock_stmt);
+
+                    if ($lock_row && (int)$lock_row['submitted'] === 1) {
+                        mysqli_rollback($conn);
+                        $_SESSION['flash_already_submitted'] = "Your exam was already submitted.";
+                        safe_redirect("result.php");
+                    }
+                }
+
+                // 2. Save result
+                $result_id = 0;
+                $stmt = mysqli_prepare($conn, "INSERT INTO results (student_id, exam_id, score, status, attempted_at) VALUES (?, ?, ?, ?, NOW())");
+                if (!$stmt) {
+                    throw new Exception("Failed to prepare results insert: " . mysqli_error($conn));
+                }
+                mysqli_stmt_bind_param($stmt, "iids", $student_id, $exam_id, $final_marks, $status);
+                if (!mysqli_stmt_execute($stmt)) {
+                    throw new Exception("Failed to execute results insert: " . mysqli_stmt_error($stmt));
+                }
+                $result_id = (int)mysqli_insert_id($conn);
+                mysqli_stmt_close($stmt);
+
+                if ($result_id <= 0) {
+                    throw new Exception("Invalid result_id generated.");
+                }
+
+                // 3. Save individual answers
                 foreach ($recorded_answers as $ans) {
                     $qid     = (int)$ans['question_id'];
                     $u_ans   = $ans['user_ans'] ?? '';
                     $is_c    = $ans['is_correct'];
                     $m_award = (float)$ans['marks'];
 
-                    $stmt = mysqli_prepare($conn, "INSERT INTO student_answers (result_id, student_id, exam_id, question_id, user_answer, is_correct, marks_awarded) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    if ($stmt) {
+                    $a_stmt = mysqli_prepare($conn, "INSERT INTO student_answers (result_id, student_id, exam_id, question_id, user_answer, is_correct, marks_awarded) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    if ($a_stmt) {
                         $is_c_bind = ($is_c === null) ? null : (int)$is_c;
-                        mysqli_stmt_bind_param($stmt, "iiiisid", $result_id, $student_id, $exam_id, $qid, $u_ans, $is_c_bind, $m_award);
-                        mysqli_stmt_execute($stmt);
-                        mysqli_stmt_close($stmt);
+                        mysqli_stmt_bind_param($a_stmt, "iiiisid", $result_id, $student_id, $exam_id, $qid, $u_ans, $is_c_bind, $m_award);
+                        mysqli_stmt_execute($a_stmt);
+                        mysqli_stmt_close($a_stmt);
                     }
                 }
 
-                // Phase 1: Mark exam session as submitted + record time taken
+                // 4. Mark exam session as submitted + record time taken
                 $upd = mysqli_prepare($conn,
                     "UPDATE exam_sessions SET submitted=1,
                      time_taken_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW())
@@ -264,7 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     mysqli_stmt_close($upd);
                 }
 
-                // Phase 1: Clean up draft answers (no longer needed)
+                // 5. Clean up draft answers (no longer needed)
                 $del = mysqli_prepare($conn,
                     "DELETE FROM draft_answers WHERE student_id=? AND exam_id=?");
                 if ($del) {
@@ -273,6 +297,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_id']) && isset($
                     mysqli_stmt_close($del);
                 }
 
+                mysqli_commit($conn);
+                $tx_success = true;
+            } catch (Exception $e) {
+                mysqli_rollback($conn);
+                error_log("[Exam Submission Failed] Student {$student_id}, Exam {$exam_id}: " . $e->getMessage());
+                $error_msg = "An error occurred while finalizing your submission. Please notify your instructor.";
+            }
+
+            if ($tx_success && $result_id > 0) {
                 // PRG redirect
                 $_SESSION['submission_review'] = [
                     'result_id'       => $result_id,

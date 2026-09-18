@@ -185,6 +185,11 @@ $logout_url = ($is_student_area || $is_admin_area) ? '../logout.php' : 'logout.p
                                     </li>
                                 <?php endif; ?>
                                 <li>
+                                    <a class="dropdown-item <?php echo ($current_page === 'migrate.php') ? 'active' : ''; ?>" href="migrate.php">
+                                        <i class="bi bi-database-gear me-2 text-primary"></i> Database Migration
+                                    </a>
+                                </li>
+                                <li>
                                     <a class="dropdown-item <?php echo ($current_page === 'change-password.php') ? 'active' : ''; ?>" href="change-password.php">
                                         <i class="bi bi-key me-2 text-primary"></i> Change Password
                                     </a>

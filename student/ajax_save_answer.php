@@ -53,22 +53,43 @@ if ($sess_stmt) {
     $sess     = $sess_res ? mysqli_fetch_assoc($sess_res) : null;
     mysqli_stmt_close($sess_stmt);
 
-    if ($sess) {
-        if ($sess['submitted']) {
-            echo json_encode(['ok' => false, 'error' => 'already_submitted']);
-            exit;
-        }
-        // Strict schedule deadline check: if end_at passed by > 15s grace period
-        if (!empty($sess['end_at']) && isset($sess['window_rem_sec']) && (int)$sess['window_rem_sec'] < -15) {
-            echo json_encode(['ok' => false, 'error' => 'exam_window_closed']);
-            exit;
-        }
-        $elapsed  = max(0, (int)($sess['elapsed_seconds'] ?? 0));
-        $allowed  = (int)$sess['duration_minutes'] * 60;
-        if ($elapsed > $allowed + 30) { // 30s grace
-            echo json_encode(['ok' => false, 'error' => 'time_expired']);
-            exit;
-        }
+    if (!$sess) {
+        echo json_encode(['ok' => false, 'error' => 'no_active_session']);
+        exit;
+    }
+
+    if ($sess['submitted']) {
+        echo json_encode(['ok' => false, 'error' => 'already_submitted']);
+        exit;
+    }
+    // Strict schedule deadline check: if end_at passed by > 15s grace period
+    if (!empty($sess['end_at']) && isset($sess['window_rem_sec']) && (int)$sess['window_rem_sec'] < -15) {
+        echo json_encode(['ok' => false, 'error' => 'exam_window_closed']);
+        exit;
+    }
+    $elapsed  = max(0, (int)($sess['elapsed_seconds'] ?? 0));
+    $allowed  = (int)$sess['duration_minutes'] * 60;
+    if ($elapsed > $allowed + 30) { // 30s grace
+        echo json_encode(['ok' => false, 'error' => 'time_expired']);
+        exit;
+    }
+} else {
+    echo json_encode(['ok' => false, 'error' => 'db_error']);
+    exit;
+}
+
+// Verify that question_id actually belongs to this exam
+$q_chk = mysqli_prepare($conn, "SELECT id FROM questions WHERE id = ? AND exam_id = ? LIMIT 1");
+if ($q_chk) {
+    mysqli_stmt_bind_param($q_chk, "ii", $question_id, $exam_id);
+    mysqli_stmt_execute($q_chk);
+    $q_res = mysqli_stmt_get_result($q_chk);
+    $valid_q = $q_res ? mysqli_fetch_assoc($q_res) : null;
+    mysqli_stmt_close($q_chk);
+
+    if (!$valid_q) {
+        echo json_encode(['ok' => false, 'error' => 'invalid_question']);
+        exit;
     }
 }
 

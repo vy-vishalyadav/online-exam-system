@@ -57,7 +57,8 @@ foreach ($folder in $allowedFolders) {
     $folderPath = Join-Path $repoRoot $folder
     if (Test-Path $folderPath -PathType Container) {
         $items = Get-ChildItem -Path $folderPath -Recurse -File | Where-Object {
-            $_.Extension -in @('.php', '.css', '.sql', '.js', '.txt', '.png', '.jpg', '.jpeg', '.svg', '.webp')
+            $_.Extension -in @('.php', '.css', '.sql', '.js', '.txt', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.htaccess') -and
+            $_.Name -ne 'config.local.php'
         }
         foreach ($item in $items) {
             $runtimeFiles.Add($item)
