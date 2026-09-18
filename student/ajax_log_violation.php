@@ -27,6 +27,9 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
     exit;
 }
 
+// Release session lock immediately so other student requests do not block
+session_write_close();
+
 // Get real IP
 $ip = $_SERVER['HTTP_X_FORWARDED_FOR']
     ?? $_SERVER['HTTP_CLIENT_IP']

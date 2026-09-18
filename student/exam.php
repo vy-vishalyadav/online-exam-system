@@ -1020,9 +1020,15 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     function goToQuestion(index) {
         if (index < 0 || index >= TOTAL_Q) return;
 
-        // Hide current active card
+        // Flush pending autosave on current active card before switching
         const curCard = document.getElementById(`questionCard_${currentQuestionIndex}`);
-        if (curCard) curCard.classList.add('d-none');
+        if (curCard) {
+            const curQid = curCard.getAttribute('data-qid');
+            if (curQid && typeof flushAutosave === 'function') {
+                flushAutosave(curQid);
+            }
+            curCard.classList.add('d-none');
+        }
 
         // Show requested card
         currentQuestionIndex = index;
@@ -1137,25 +1143,16 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         if (el) el.textContent = len;
     }
 
-    // ── Debounced auto-save for descriptive ───────────────────────────────────
+    // ── Debounced auto-save for descriptive (Optimized with dirty-check & flush) ─
+    const lastServerSaved = <?php echo json_encode(array_map('strval', $draft_answers)); ?> || {};
     const saveTimers = {};
-    function scheduleAutoSave(qId, val) {
-        lsSave(qId, val);
-        updateCharCount(qId, val.length);
-        updatePaletteStatus();
-        clearTimeout(saveTimers[qId]);
-        saveTimers[qId] = setTimeout(() => autoSaveNow(qId, val), 1500); // 1.5s debounce
-    }
-
-    // ── AJAX save to server ───────────────────────────────────────────────────
-    const indicator = document.getElementById('saveIndicator');
-    function setSaveStatus(msg, color) {
-        if (!indicator) return;
-        indicator.textContent = msg;
-        indicator.style.color = color;
-    }
 
     function autoSaveNow(qId, val) {
+        // Skip redundant AJAX write if value hasn't changed since last server save
+        if (lastServerSaved[qId] !== undefined && lastServerSaved[qId] === val) {
+            return;
+        }
+
         setSaveStatus('Saving…', '#888');
         const fd = new FormData();
         fd.append('exam_id',     EXAM_ID);
@@ -1167,6 +1164,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             .then(r => r.json())
             .then(d => {
                 if (d.ok) {
+                    lastServerSaved[qId] = val;
                     setSaveStatus(`✓ Saved ${d.saved_at}`, '#198754');
                 } else if (d.error === 'time_expired') {
                     setSaveStatus('⚠ Time expired!', '#dc3545');
@@ -1175,6 +1173,43 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 }
             })
             .catch(() => setSaveStatus('⚠ Offline — draft in browser', '#e67e22'));
+    }
+
+    function flushAutosave(qId) {
+        if (saveTimers[qId]) {
+            clearTimeout(saveTimers[qId]);
+            delete saveTimers[qId];
+        }
+        const ta = document.getElementById(`desc_${qId}`);
+        if (ta) {
+            autoSaveNow(qId, ta.value);
+        }
+    }
+
+    function scheduleAutoSave(qId, val) {
+        lsSave(qId, val);
+        updateCharCount(qId, val.length);
+        updatePaletteStatus();
+        clearTimeout(saveTimers[qId]);
+        saveTimers[qId] = setTimeout(() => autoSaveNow(qId, val), 3000); // 3.0s debounce
+    }
+
+    // Attach blur listeners to descriptive textareas so clicking away flushes immediately
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('textarea.descriptive-input').forEach(ta => {
+            ta.addEventListener('blur', function() {
+                const qId = this.getAttribute('data-qid');
+                if (qId) flushAutosave(qId);
+            });
+        });
+    });
+
+    // ── AJAX save indicator ───────────────────────────────────────────────────
+    const indicator = document.getElementById('saveIndicator');
+    function setSaveStatus(msg, color) {
+        if (!indicator) return;
+        indicator.textContent = msg;
+        indicator.style.color = color;
     }
 
     // ── State flags & UI Modals (keeps fullscreen intact, 0 violations) ──────
@@ -1211,6 +1246,12 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     }
 
     function openSubmitModal() {
+        // Flush all pending descriptive autosaves before opening submission review modal
+        document.querySelectorAll('textarea.descriptive-input').forEach(t => {
+            const qId = t.getAttribute('data-qid');
+            if (qId && typeof flushAutosave === 'function') flushAutosave(qId);
+        });
+
         const answeredMcq  = document.querySelectorAll('input[type="radio"]:checked').length;
         let   answeredDesc = 0;
         document.querySelectorAll('textarea.descriptive-input').forEach(t => {
@@ -1291,7 +1332,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
                 }
             })
             .catch(() => {}); // silently fail on network issues
-    }, 30000);
+    }, 60000);
 
     // ══════════════════════════════════════════════════════════════════════════
     // PHASE 2 — Anti-Cheat & Integrity Controls

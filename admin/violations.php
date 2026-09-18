@@ -402,6 +402,21 @@ if (!soundAlertEnabled) {
     }
 }
 
+// ── Polling Controls ──────────────────────────────────────────────────────────
+function startPolling() {
+    stopPolling();
+    if (isAutoSyncEnabled && document.visibilityState === 'visible') {
+        pollTimer = setInterval(() => fetchViolationsFeed(false), POLL_INTERVAL_MS);
+    }
+}
+
+function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
 // ── Auto-Sync Toggle Control ──────────────────────────────────────────────────
 function toggleAutoSync() {
     isAutoSyncEnabled = !isAutoSyncEnabled;
@@ -417,6 +432,7 @@ function toggleAutoSync() {
         stateText.textContent = 'Active';
         dot.className = 'spinner-grow spinner-grow-sm text-success';
         badge.className = 'badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1.5 small fw-semibold d-inline-flex align-items-center gap-1.5';
+        startPolling();
         fetchViolationsFeed(true);
     } else {
         icon.className = 'bi bi-play-fill me-1';
@@ -424,6 +440,7 @@ function toggleAutoSync() {
         stateText.textContent = 'Paused';
         dot.className = 'spinner-grow spinner-grow-sm text-secondary';
         badge.className = 'badge bg-light text-muted border rounded-pill px-3 py-1.5 small fw-semibold d-inline-flex align-items-center gap-1.5';
+        stopPolling();
     }
 }
 
@@ -704,12 +721,18 @@ function minimizeOffenders() {
 // ── Polling Lifecycle ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     reindexViolationsTable();
-    pollTimer = setInterval(() => fetchViolationsFeed(false), POLL_INTERVAL_MS);
+    startPolling();
 });
 
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && isAutoSyncEnabled) {
-        fetchViolationsFeed(false);
+    if (document.visibilityState === 'visible') {
+        if (isAutoSyncEnabled) {
+            fetchViolationsFeed(false);
+            startPolling();
+        }
+    } else {
+        // Tab hidden or minimized: stop background polling to save server and DB capacity
+        stopPolling();
     }
 });
 </script>

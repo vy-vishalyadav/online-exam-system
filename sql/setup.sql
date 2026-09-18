@@ -170,6 +170,8 @@ CREATE TABLE IF NOT EXISTS `exam_violations` (
     `user_agent`     TEXT         NULL,
     `occurred_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_violations` (`student_id`, `exam_id`),
+    INDEX `idx_violations_lookup` (`student_id`, `exam_id`, `violation_type`),
+    INDEX `idx_violations_exam_time` (`exam_id`, `occurred_at`),
     FOREIGN KEY (`student_id`) REFERENCES `students`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`exam_id`)    REFERENCES `exams`(`id`)    ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

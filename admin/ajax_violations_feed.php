@@ -44,6 +44,20 @@ if ($c_stmt) {
     mysqli_stmt_close($c_stmt);
 }
 
+// Optimization: If delta polling and no new violations occurred, exit early without heavy queries
+if ($after_id > 0 && !$full_reload && $max_id <= $after_id) {
+    echo json_encode([
+        'ok'          => true,
+        'total_count' => $total_count,
+        'max_id'      => $max_id,
+        'new_count'   => 0,
+        'events'      => [],
+        'summaries'   => null,
+        'synced_at'   => date('h:i:s A')
+    ]);
+    exit;
+}
+
 // Fetch violations
 $fetch_where  = $where;
 $fetch_params = $params;
@@ -102,7 +116,8 @@ if ($stmt) {
     mysqli_stmt_close($stmt);
 }
 
-// Summary: top recent offenders
+// Summary: top recent offenders (scoped to current exam if filtered)
+$summary_where = $filter_exam ? " WHERE v.exam_id = " . (int)$filter_exam : "";
 $summary_sql = "SELECT v.student_id, s.name, s.email, e.title AS exam_title, v.exam_id,
                        COUNT(*) AS total,
                        SUM(v.violation_type IN ('tab_switch','fullscreen_exit','exit_exam')) AS serious,
@@ -110,6 +125,7 @@ $summary_sql = "SELECT v.student_id, s.name, s.email, e.title AS exam_title, v.e
                 FROM exam_violations v
                 JOIN students s ON v.student_id=s.id
                 JOIN exams e ON v.exam_id=e.id
+                $summary_where
                 GROUP BY v.student_id, v.exam_id
                 ORDER BY latest_violation DESC, serious DESC, total DESC LIMIT 100";
 $summary_res = mysqli_query($conn, $summary_sql);

@@ -29,6 +29,9 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
     exit;
 }
 
+// Release session lock immediately so concurrent requests (e.g. ajax_timer.php) do not serialize
+session_write_close();
+
 // Truncate descriptive answers to 5000 chars
 if (strlen($answer) > 5000) {
     $answer = substr($answer, 0, 5000);
