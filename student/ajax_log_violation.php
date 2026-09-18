@@ -34,7 +34,11 @@ session_write_close();
 $sess_chk = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id = ? AND exam_id = ? LIMIT 1");
 if ($sess_chk) {
     mysqli_stmt_bind_param($sess_chk, "ii", $student_id, $exam_id);
-    mysqli_stmt_execute($sess_chk);
+    if (!mysqli_stmt_execute($sess_chk)) {
+        mysqli_stmt_close($sess_chk);
+        echo json_encode(['ok' => false, 'error' => 'db_error']);
+        exit;
+    }
     $s_res = mysqli_stmt_get_result($sess_chk);
     $session_row = $s_res ? mysqli_fetch_assoc($s_res) : null;
     mysqli_stmt_close($sess_chk);

@@ -82,7 +82,7 @@ if ($is_student_area && !isset($_SESSION['student_id'])) {
 
 $is_admin = isset($_SESSION['admin_id']);
 $is_student = isset($_SESSION['student_id']);
-$is_super_admin = $is_admin && (!empty($_SESSION['is_super_admin']) || (int)$_SESSION['admin_id'] === 1 || strtolower($_SESSION['admin_username'] ?? '') === 'admin');
+$is_super_admin = $is_admin && !empty($_SESSION['is_super_admin']);
 
 $css_path = ($is_student_area || $is_admin_area) ? '../css/style.css' : 'css/style.css';
 $css_ver = file_exists(dirname(__DIR__) . '/css/style.css') ? filemtime(dirname(__DIR__) . '/css/style.css') : time();

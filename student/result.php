@@ -195,7 +195,11 @@ function finalizeExamSubmission(mysqli $conn, int $student_id, int $exam_id, arr
             throw new Exception("Lock prepare failed: " . mysqli_error($conn));
         }
         mysqli_stmt_bind_param($lock_stmt, "ii", $student_id, $exam_id);
-        mysqli_stmt_execute($lock_stmt);
+        if (!mysqli_stmt_execute($lock_stmt)) {
+            $err = mysqli_stmt_error($lock_stmt);
+            mysqli_stmt_close($lock_stmt);
+            throw new Exception("Lock execute failed: " . $err);
+        }
         $lock_res = mysqli_stmt_get_result($lock_stmt);
         $lock_row = $lock_res ? mysqli_fetch_assoc($lock_res) : null;
         mysqli_stmt_close($lock_stmt);
@@ -258,11 +262,16 @@ function finalizeExamSubmission(mysqli $conn, int $student_id, int $exam_id, arr
 
         // Clean up draft_answers
         $del = mysqli_prepare($conn, "DELETE FROM draft_answers WHERE student_id = ? AND exam_id = ?");
-        if ($del) {
-            mysqli_stmt_bind_param($del, "ii", $student_id, $exam_id);
-            mysqli_stmt_execute($del);
-            mysqli_stmt_close($del);
+        if (!$del) {
+            throw new Exception("Draft answers cleanup prepare failed: " . mysqli_error($conn));
         }
+        mysqli_stmt_bind_param($del, "ii", $student_id, $exam_id);
+        if (!mysqli_stmt_execute($del)) {
+            $err = mysqli_stmt_error($del);
+            mysqli_stmt_close($del);
+            throw new Exception("Draft answers cleanup execute failed: " . $err);
+        }
+        mysqli_stmt_close($del);
 
         mysqli_commit($conn);
 

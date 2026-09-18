@@ -48,7 +48,11 @@ $sess_stmt = mysqli_prepare($conn,
      WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
 if ($sess_stmt) {
     mysqli_stmt_bind_param($sess_stmt, "ii", $student_id, $exam_id);
-    mysqli_stmt_execute($sess_stmt);
+    if (!mysqli_stmt_execute($sess_stmt)) {
+        mysqli_stmt_close($sess_stmt);
+        echo json_encode(['ok' => false, 'error' => 'db_error']);
+        exit;
+    }
     $sess_res = mysqli_stmt_get_result($sess_stmt);
     $sess     = $sess_res ? mysqli_fetch_assoc($sess_res) : null;
     mysqli_stmt_close($sess_stmt);
@@ -82,7 +86,11 @@ if ($sess_stmt) {
 $q_chk = mysqli_prepare($conn, "SELECT id FROM questions WHERE id = ? AND exam_id = ? LIMIT 1");
 if ($q_chk) {
     mysqli_stmt_bind_param($q_chk, "ii", $question_id, $exam_id);
-    mysqli_stmt_execute($q_chk);
+    if (!mysqli_stmt_execute($q_chk)) {
+        mysqli_stmt_close($q_chk);
+        echo json_encode(['ok' => false, 'error' => 'db_error']);
+        exit;
+    }
     $q_res = mysqli_stmt_get_result($q_chk);
     $valid_q = $q_res ? mysqli_fetch_assoc($q_res) : null;
     mysqli_stmt_close($q_chk);
