@@ -73,7 +73,7 @@ $now      = time();
 $start_at = !empty($exam['start_at']) ? strtotime($exam['start_at']) : null;
 $end_at   = !empty($exam['end_at'])   ? strtotime($exam['end_at'])   : null;
 
-if ($start_at && $now < $start_at) {
+if ($start_at && ($now + 5) < $start_at) {
     // Exam hasn't opened yet
     echo '<div class="card border-0 shadow-sm rounded-4 p-5 text-center my-4">
         <i class="bi bi-calendar-event fs-1 text-info d-block mb-3"></i>
@@ -737,14 +737,15 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
 
     <script>
     // ── Config ────────────────────────────────────────────────────────────────
+    const STUDENT_ID  = <?php echo (int)$student_id; ?>;
     const EXAM_ID     = <?php echo $exam_id; ?>;
     const CSRF_TOKEN  = <?php echo json_encode($_SESSION['csrf_token']); ?>;
-    const LS_KEY      = `exam_draft_${EXAM_ID}`;
+    const LS_KEY      = `exam_draft_s${STUDENT_ID}_e${EXAM_ID}`;
     const SAVE_URL    = 'ajax_save_answer.php';
     const TIMER_URL   = `ajax_timer.php?exam_id=${EXAM_ID}`;
     const TOTAL_Q     = <?php echo $total_questions; ?>;
 
-    // ── localStorage: load any cached answers (offline fallback) ─────────────
+    // ── localStorage: load any cached answers (strictly scoped per student & exam) ──
     function lsLoad() {
         try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(e) { return {}; }
     }
@@ -755,16 +756,33 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
             localStorage.setItem(LS_KEY, JSON.stringify(d));
         } catch(e) {}
     }
+    function lsClear() {
+        try {
+            localStorage.removeItem(LS_KEY);
+            localStorage.removeItem(`exam_draft_${EXAM_ID}`);
+        } catch(e) {}
+    }
 
-    // On page load: restore any localStorage values not already pre-filled by PHP drafts & wire UI modals
+    // On page load: purge foreign student drafts & restore only this student's offline cache if empty in DB
     document.addEventListener('DOMContentLoaded', function() {
+        try {
+            Object.keys(localStorage).forEach(k => {
+                if (k.startsWith('exam_draft_') && k !== LS_KEY) {
+                    localStorage.removeItem(k);
+                }
+            });
+        } catch(e) {}
+
         const cache = lsLoad();
         Object.entries(cache).forEach(([qid, val]) => {
             // MCQ
             const radio = document.querySelector(`input[name="answer[${qid}]"][value="${val}"]`);
             if (radio && !radio.checked) {
-                radio.checked = true;
-                selectOption(parseInt(qid), val, false); // false = don't re-save to server
+                const anyChecked = document.querySelector(`input[name="answer[${qid}]"]:checked`);
+                if (!anyChecked) {
+                    radio.checked = true;
+                    selectOption(parseInt(qid), val, false); // false = don't re-save to server
+                }
             }
             // Descriptive
             const ta = document.getElementById(`desc_${qid}`);
@@ -865,6 +883,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
         if (confirmFinalSubmitBtn) {
             confirmFinalSubmitBtn.addEventListener('click', () => {
                 isAutoSubmitting = true;
+                lsClear();
                 const m = getSubmitModal();
                 if (m) m.hide();
                 document.getElementById('examForm').submit();
@@ -1232,6 +1251,7 @@ $exam_submit_token             = $_SESSION[$submit_token_key];
     function triggerAutoSubmit(reason) {
         if (isAutoSubmitting) return;
         isAutoSubmitting = true;
+        lsClear();
         timerText.textContent = "00:00 — Time's Up!";
         timerBox.classList.add('warning');
         // Submit directly without native alert() which freezes JS & drops fullscreen

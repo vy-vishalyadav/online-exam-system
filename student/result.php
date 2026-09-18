@@ -1122,6 +1122,21 @@ document.addEventListener("DOMContentLoaded", function() {
         setTimeout(updateScrollWidth, 300);
     }
 });
+
+// Data isolation: clear submitted exam drafts from localStorage
+try {
+    <?php if (!empty($student_id)): ?>
+        <?php if (!empty($exam_id)): ?>
+            localStorage.removeItem('exam_draft_s<?php echo (int)$student_id; ?>_e<?php echo (int)$exam_id; ?>');
+            localStorage.removeItem('exam_draft_<?php echo (int)$exam_id; ?>');
+        <?php endif; ?>
+    <?php endif; ?>
+    <?php if (!empty($submission_review)): ?>
+        Object.keys(localStorage).forEach(function(k) {
+            if (k.indexOf('exam_draft_') === 0) localStorage.removeItem(k);
+        });
+    <?php endif; ?>
+} catch(e) {}
 </script>
 
 <?php include '../includes/footer.php'; ?>

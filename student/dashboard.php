@@ -115,15 +115,26 @@ $exams = mysqli_stmt_get_result($stmt);
             $sched_badge    = '';
             if ($s_at && $now_ts < $s_at) {
                 $sched_locked = true;
-                $sched_badge  = '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2.5 py-1 small live-sched-badge" data-target="' . $s_at . '" data-type="opens" data-label="Opens ' . date('d M, h:i A', $s_at) . '"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, h:i A', $s_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2.5 py-1 small live-sched-badge" id="schedBadge_' . (int)$exam['id'] . '" data-exam-id="' . (int)$exam['id'] . '" data-target="' . $s_at . '" data-type="opens" data-label="Opens ' . date('d M, h:i A', $s_at) . '"><i class="bi bi-calendar-event me-1"></i>Opens ' . date('d M, h:i A', $s_at) . '</span>';
             } elseif ($e_at && $now_ts > $e_at) {
                 $sched_locked = true;
-                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2.5 py-1 small"><i class="bi bi-lock me-1"></i>Closed ' . date('d M, h:i A', $e_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-secondary rounded-pill px-2.5 py-1 small" id="schedBadge_' . (int)$exam['id'] . '"><i class="bi bi-lock me-1"></i>Closed ' . date('d M, h:i A', $e_at) . '</span>';
             } elseif ($s_at && $e_at) {
-                $sched_badge  = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small live-sched-badge" data-target="' . $e_at . '" data-type="closes" data-label="Live until ' . date('h:i A', $e_at) . '"><i class="bi bi-broadcast me-1"></i>Live until ' . date('h:i A', $e_at) . '</span>';
+                $sched_badge  = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small live-sched-badge" id="schedBadge_' . (int)$exam['id'] . '" data-exam-id="' . (int)$exam['id'] . '" data-target="' . $e_at . '" data-type="closes" data-label="Live until ' . date('h:i A', $e_at) . '"><i class="bi bi-broadcast me-1"></i>Live until ' . date('h:i A', $e_at) . '</span>';
             }
         ?>
-            <div class="col-md-6 col-lg-4 exam-card-wrapper" data-status="<?php echo $filter_status; ?>">
+            <div class="col-md-6 col-lg-4 exam-card-wrapper"
+                 id="examCardWrapper_<?php echo (int)$exam['id']; ?>"
+                 data-status="<?php echo $filter_status; ?>"
+                 data-exam-id="<?php echo (int)$exam['id']; ?>"
+                 data-title="<?php echo htmlspecialchars($exam['title'], ENT_QUOTES, 'UTF-8'); ?>"
+                 data-duration="<?php echo (int)$exam['duration_minutes']; ?>"
+                 data-qcount="<?php echo $q_count; ?>"
+                 data-total-marks="<?php echo htmlspecialchars((string)$total_marks_disp, ENT_QUOTES, 'UTF-8'); ?>"
+                 data-start-ts="<?php echo $s_at ?: 0; ?>"
+                 data-end-ts="<?php echo $e_at ?: 0; ?>"
+                 data-in-progress="<?php echo $is_in_progress ? '1' : '0'; ?>"
+                 data-submitted="<?php echo $is_submitted ? '1' : '0'; ?>">
                 <div class="hover-card h-100 p-4 d-flex flex-column justify-content-between">
                     <div>
                         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-1">
@@ -137,12 +148,13 @@ $exams = mysqli_stmt_get_result($stmt);
                                 <i class="bi bi-award me-1"></i><?php echo $total_marks_disp; ?> Marks
                             </span>
                         </div>
-                        <?php if ($sched_badge): ?>
-                            <div class="mb-2"><?php echo $sched_badge; ?></div>
-                        <?php endif; ?>
+                        <div class="mb-2" id="schedBadgeContainer_<?php echo (int)$exam['id']; ?>">
+                            <?php echo $sched_badge; ?>
+                        </div>
 
                         <h5 class="fw-bold text-dark mb-2"><?php echo htmlspecialchars($exam['title']); ?></h5>
                         
+                        <div id="examMiddleStatus_<?php echo (int)$exam['id']; ?>">
                         <?php if ($is_submitted): ?>
                             <div class="bg-light p-3 rounded-3 mb-3 border">
                                 <?php if ($is_pending): ?>
@@ -157,8 +169,8 @@ $exams = mysqli_stmt_get_result($stmt);
                                     </div>
                                 <?php else: ?>
                                     <?php 
-                                    $marks_obtained = ($last_score !== null) ? (int)$last_score : 0; 
-                                    $score_pct = ($total_marks > 0) ? min(100, round(($marks_obtained / $total_marks) * 100)) : 0;
+                                    $marks_obtained = ($last_score !== null) ? rtrim(rtrim(number_format((float)$last_score, 2), '0'), '.') : '0'; 
+                                    $score_pct = ($total_marks > 0) ? min(100, round(((float)$marks_obtained / $total_marks) * 100)) : 0;
                                     ?>
                                     <div class="d-flex justify-content-between align-items-center">
                                         <small class="text-muted fw-semibold">Final Score:</small>
@@ -194,9 +206,10 @@ $exams = mysqli_stmt_get_result($stmt);
                                 Not started yet.
                             </p>
                         <?php endif; ?>
+                        </div>
                     </div>
 
-                    <div>
+                    <div id="examAction_<?php echo (int)$exam['id']; ?>">
                         <?php if ($is_submitted): ?>
                             <?php if ($is_pending): ?>
                                 <button class="btn btn-outline-warning w-100 fw-semibold py-2" disabled>
@@ -209,7 +222,7 @@ $exams = mysqli_stmt_get_result($stmt);
                                 </a>
                             <?php endif; ?>
                         <?php elseif ($sched_locked): ?>
-                            <button class="btn btn-secondary w-100 fw-bold py-2" disabled>
+                            <button class="btn btn-secondary w-100 fw-bold py-2 btn-sched-locked" disabled>
                                 <i class="bi bi-lock me-1"></i>
                                 <?php echo ($s_at && $now_ts < $s_at) ? 'Not Open Yet' : 'Exam Closed'; ?>
                             </button>
@@ -310,13 +323,14 @@ function confirmStartExam(examId, title, duration, qCount, totalMarks) {
     new bootstrap.Modal(document.getElementById('startExamModal')).show();
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.btn-start-exam').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            var d = this.dataset;
-            confirmStartExam(d.examId, d.title, d.duration, d.qcount, d.totalMarks);
-        });
-    });
+// Event delegation for Start Exam buttons (handles both static and dynamically unlocked buttons)
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.btn-start-exam');
+    if (btn) {
+        var d = btn.dataset;
+        var rawTitle = d.title ? decodeURIComponent(d.title) : (d.title || '');
+        confirmStartExam(d.examId, rawTitle, d.duration, d.qcount, d.totalMarks);
+    }
 });
 
 function filterExams(status, btn) {
@@ -338,24 +352,73 @@ function filterExams(status, btn) {
     });
 }
 
-// Dynamic real-time countdown updater for schedule badges
+// Dynamic real-time countdown updater: unlocks Start button immediately when opening timer reaches 0
 function updateScheduleBadges() {
     var now = Math.floor(Date.now() / 1000);
     document.querySelectorAll('.live-sched-badge').forEach(function(badge) {
+        var examId = badge.getAttribute('data-exam-id');
         var target = parseInt(badge.getAttribute('data-target'), 10);
         var type = badge.getAttribute('data-type');
-        var defaultLabel = badge.getAttribute('data-label') || '';
+        var card = document.getElementById('examCardWrapper_' + examId);
         if (!target) return;
         var diff = target - now;
+
         if (diff <= 0) {
             if (type === 'opens') {
-                badge.innerHTML = '<i class="bi bi-broadcast me-1"></i>Opening now...';
-            } else {
+                // Scheduled start time reached! Transition to Live state without needing refresh
+                var endTs = card ? parseInt(card.getAttribute('data-end-ts'), 10) : 0;
+                if (endTs && endTs > now) {
+                    badge.setAttribute('data-type', 'closes');
+                    badge.setAttribute('data-target', endTs);
+                    badge.className = 'badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small live-sched-badge';
+                    var cDiff = endTs - now;
+                    var ch = Math.floor(cDiff / 3600);
+                    var cm = Math.floor((cDiff % 3600) / 60);
+                    var cs = cDiff % 60;
+                    badge.innerHTML = '<i class="bi bi-broadcast me-1"></i>Live &bull; ' + (ch > 0 ? ch + 'h ' : '') + cm + 'm ' + cs + 's left';
+                } else {
+                    badge.className = 'badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 small';
+                    badge.innerHTML = '<i class="bi bi-broadcast me-1"></i>Live Now';
+                }
+
+                // Dynamically unlock the card button immediately!
+                if (card) {
+                    var actionBox = document.getElementById('examAction_' + examId);
+                    var isSubmitted = card.getAttribute('data-submitted') === '1';
+                    var isInProgress = card.getAttribute('data-in-progress') === '1';
+                    var qCount = parseInt(card.getAttribute('data-qcount'), 10) || 0;
+                    var title = card.getAttribute('data-title') || '';
+                    var duration = card.getAttribute('data-duration') || '0';
+                    var totalMarks = card.getAttribute('data-total-marks') || '0';
+
+                    if (!isSubmitted && actionBox && actionBox.querySelector('.btn-sched-locked')) {
+                        if (qCount > 0) {
+                            if (isInProgress) {
+                                actionBox.innerHTML = '<a href="exam.php?id=' + examId + '" class="btn btn-warning text-dark w-100 fw-bold shadow-sm py-2"><i class="bi bi-play-circle-fill me-1"></i> Resume Exam</a>';
+                            } else {
+                                var safeTitle = title.replace(/"/g, '&quot;');
+                                actionBox.innerHTML = '<button type="button" class="btn btn-primary w-100 fw-bold shadow-sm py-2 btn-start-exam" data-exam-id="' + examId + '" data-title="' + safeTitle + '" data-duration="' + duration + '" data-qcount="' + qCount + '" data-total-marks="' + totalMarks + '"><i class="bi bi-play-fill me-1"></i> Start Exam</button>';
+                            }
+                        } else {
+                            actionBox.innerHTML = '<button class="btn btn-secondary w-100 fw-bold py-2" disabled><i class="bi bi-exclamation-circle me-1"></i> No Questions Available</button>';
+                        }
+                    }
+                }
+            } else if (type === 'closes') {
+                // Closing window expired!
                 badge.className = 'badge bg-secondary rounded-pill px-2.5 py-1 small';
                 badge.innerHTML = '<i class="bi bi-lock me-1"></i>Closed';
+                if (card) {
+                    var actionBox = document.getElementById('examAction_' + examId);
+                    var isSubmitted = card.getAttribute('data-submitted') === '1';
+                    if (!isSubmitted && actionBox) {
+                        actionBox.innerHTML = '<button class="btn btn-secondary w-100 fw-bold py-2" disabled><i class="bi bi-lock me-1"></i> Exam Closed</button>';
+                    }
+                }
             }
             return;
         }
+
         var hours = Math.floor(diff / 3600);
         var mins = Math.floor((diff % 3600) / 60);
         var secs = diff % 60;
@@ -369,6 +432,12 @@ function updateScheduleBadges() {
 }
 setInterval(updateScheduleBadges, 1000);
 updateScheduleBadges();
+
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+        updateScheduleBadges();
+    }
+});
 </script>
 
 <?php include '../includes/footer.php'; ?>

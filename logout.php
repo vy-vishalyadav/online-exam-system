@@ -29,8 +29,27 @@ if (ini_get("session.use_cookies")) {
 // Destroy session on server
 session_unset();
 session_destroy();
-
-// Redirect to login page
-header("Location: index.php?msg=logged_out");
-exit;
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Logging out...</title>
+    <meta http-equiv="refresh" content="1;url=index.php?msg=logged_out">
+</head>
+<body style="background:#f8fafc; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0;">
+    <div style="text-align:center; color:#64748b;">
+        <p>Logging out securely...</p>
+    </div>
+    <script>
+    try {
+        Object.keys(localStorage).forEach(function(k) {
+            if (k.indexOf('exam_draft_') === 0) {
+                localStorage.removeItem(k);
+            }
+        });
+    } catch(e) {}
+    window.location.replace("index.php?msg=logged_out");
+    </script>
+</body>
+</html>

@@ -398,6 +398,14 @@ function togglePass(fieldId, btn) {
         icon.className = 'bi bi-eye';
     }
 }
+// Data isolation: ensure no draft answers linger on the machine when on login screen
+try {
+    Object.keys(localStorage).forEach(function(k) {
+        if (k.indexOf('exam_draft_') === 0) {
+            localStorage.removeItem(k);
+        }
+    });
+} catch(e) {}
 </script>
 </body>
 
