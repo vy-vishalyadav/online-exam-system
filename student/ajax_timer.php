@@ -35,7 +35,11 @@ if (!$stmt) {
 }
 
 mysqli_stmt_bind_param($stmt, "ii", $student_id, $exam_id);
-mysqli_stmt_execute($stmt);
+if (!mysqli_stmt_execute($stmt)) {
+    mysqli_stmt_close($stmt);
+    echo json_encode(['ok' => false, 'error' => 'db_error']);
+    exit;
+}
 $res  = mysqli_stmt_get_result($stmt);
 $sess = $res ? mysqli_fetch_assoc($res) : null;
 mysqli_stmt_close($stmt);

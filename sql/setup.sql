@@ -2,8 +2,7 @@
 --  Online Exam System — Complete Database Setup
 -- ============================================================
 
--- Automatically selects your database (adjust if importing directly):
--- USE `if0_42825922_exam`; -- For InfinityFree Cloud
+-- USE `your_database_name`; -- For Remote/Cloud MySQL
 -- USE `online_exam_db`;    -- For Local XAMPP
 
 -- ─────────────────────────────────────────────

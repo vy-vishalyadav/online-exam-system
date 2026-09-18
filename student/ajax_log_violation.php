@@ -31,7 +31,14 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
 session_write_close();
 
 // Verify student has an active unsubmitted exam session for this exam
-$sess_chk = mysqli_prepare($conn, "SELECT submitted FROM exam_sessions WHERE student_id = ? AND exam_id = ? LIMIT 1");
+$sess_chk = mysqli_prepare($conn,
+    "SELECT es.submitted, es.duration_minutes,
+            TIMESTAMPDIFF(SECOND, es.started_at, NOW()) AS elapsed_seconds,
+            e.end_at,
+            TIMESTAMPDIFF(SECOND, NOW(), e.end_at) AS window_rem_sec
+     FROM exam_sessions es
+     JOIN exams e ON e.id = es.exam_id
+     WHERE es.student_id = ? AND es.exam_id = ? LIMIT 1");
 if ($sess_chk) {
     mysqli_stmt_bind_param($sess_chk, "ii", $student_id, $exam_id);
     if (!mysqli_stmt_execute($sess_chk)) {
@@ -45,6 +52,11 @@ if ($sess_chk) {
 
     if (!$session_row || (int)$session_row['submitted'] === 1) {
         echo json_encode(['ok' => false, 'error' => 'invalid_session']);
+        exit;
+    }
+
+    if (!empty($session_row['end_at']) && isset($session_row['window_rem_sec']) && (int)$session_row['window_rem_sec'] < -15) {
+        echo json_encode(['ok' => false, 'error' => 'exam_window_closed']);
         exit;
     }
 } else {
