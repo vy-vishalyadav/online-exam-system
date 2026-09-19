@@ -14,8 +14,8 @@
 * **Primary Branch:** `main` `[VERIFIED]`
 * **Local Workspace Path:** `C:\xampp\htdocs\online-exam-system` `[VERIFIED]`
 * **Production Application Path:** `/var/www/online-exam` (on EC2) `[VERIFIED]`
-* **Git Sync Status (GitHub vs Local):** Local `HEAD` is in sync with `origin/main` at commit `6b62a6c5ac8d4e0ab333aea4d36852ca2fa3af97`. `[VERIFIED]`
-* **Production Deployed Commit on EC2:** `/var/www/online-exam` is currently running checked out at commit `c8a2a715aba455db742ddfa233570ab46796059c` (`fix(dashboard): show accurate status for closed and upcoming exams instead of generic not-started`). Commit `6b62a6c` contains local lifecycle management skills and has not been deployed to the server worktree (web application code is identical). `[VERIFIED]`
+* **Git Sync Status (GitHub vs Local):** Local `HEAD` is in sync with `origin/main` at commit `f40fdd633a13a941df91d366b25bce2f59ad3555`. `[VERIFIED]`
+* **Production Deployed Commit on EC2:** `/var/www/online-exam` is currently running checked out with application code matching commit `c8a2a715aba455db742ddfa233570ab46796059c` (`fix(dashboard): show accurate status for closed and upcoming exams instead of generic not-started`). Commits from `6b62a6c` to `f40fdd6` contain local lifecycle management skills, deployment skills, backup automation, and operational handoff documentation; application source code in `/var/www/online-exam` is identical to `HEAD`. `[VERIFIED]`
 
 ---
 
