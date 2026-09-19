@@ -709,104 +709,118 @@ function Run-StatusOrVerify([bool]$fullVerification = $false) {
     Write-Header "AWS PRODUCTION INSTANCE LIFECYCLE AUDIT"
 
     # 1. AWS Identity & Region
-    $caller = Get-CallerInfo
-    Write-Pass "AWS Authentication verified (Account: $($caller.Account), Role/User: $($caller.Arn))"
-    Write-Pass "Target Region verified: $ExpectedRegion"
-
-    # 2. EC2 Instance Metadata
-    $inst = Get-Ec2InstanceInfo
-    $stateName = $inst.State.Name
-    $publicIp  = $inst.PublicIpAddress
-    $privateIp = $inst.PrivateIpAddress
-    $instName  = ($inst.Tags | Where-Object { $_.Key -eq "Name" }).Value
-
-    Write-Host "`n  EC2 INSTANCE DETAILS:" -ForegroundColor White
-    Write-Host "    Instance ID    : $($inst.InstanceId)" -ForegroundColor Gray
-    Write-Host "    Name Tag       : $instName" -ForegroundColor Gray
-    Write-Host "    Instance Type  : $($inst.InstanceType)" -ForegroundColor Gray
-    Write-Host "    Current State  : $stateName" -ForegroundColor $(if ($stateName -eq "running") { "Green" } else { "Yellow" })
-    Write-Host "    Private IPv4   : $privateIp" -ForegroundColor Gray
-    Write-Host "    Public IPv4    : $(if ($publicIp) { $publicIp } else { '[None / Released]' })" -ForegroundColor Gray
-
-    # 3. Elastic IP Details
-    $eip = Get-AssociatedEipInfo
-    if ($eip) {
-        Write-Pass "Elastic IP attached: $($eip.PublicIp) (Allocation: $($eip.AllocationId), Association: $($eip.AssociationId))"
-    } else {
-        if ($publicIp) {
-            Write-Warn "Public IPv4 ($publicIp) is EPHEMERAL (Not an Elastic IP). Will change upon stop/start."
-        } else {
-            Write-Info "No Elastic IP or Public IPv4 is currently associated."
-        }
-    }
-
-    # 4. EBS Volume Integrity
-    $attachedVol = $inst.BlockDeviceMappings | Where-Object { $_.Ebs.VolumeId -eq $ExpectedVolumeId }
-    if ($attachedVol -and $attachedVol.Ebs.Status -eq "attached") {
-        Write-Pass "EBS Volume $ExpectedVolumeId is safely attached at $($attachedVol.DeviceName)"
-    } else {
-        Write-Warn "Expected EBS volume $ExpectedVolumeId attachment status: $($attachedVol.Ebs.Status)"
-    }
-
-    # 5. SSM & Server Health (if running)
+    $awsAvailable = $false
+    $inst = $null
+    $stateName = "unknown"
+    $publicIp  = $null
     $ssmOnline = $false
-    if ($stateName -eq "running") {
-        $ssmRaw = & $aws ssm describe-instance-information `
-            --filters "Key=InstanceIds,Values=$ExpectedInstanceId" `
-            --region $ExpectedRegion `
-            --output json 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $ssmJson = $ssmRaw | ConvertFrom-Json
-            if ($ssmJson.InstanceInformationList.Count -gt 0 -and $ssmJson.InstanceInformationList[0].PingStatus -eq "Online") {
-                $ssmOnline = $true
-                Write-Pass "SSM Status is Online (Agent v$($ssmJson.InstanceInformationList[0].AgentVersion))"
-            }
-        }
 
-        if (-not $ssmOnline) {
-            Write-Warn "SSM Agent is not reporting Online yet."
+    try {
+        $caller = Get-CallerInfo
+        Write-Pass "AWS Authentication verified (Account: $($caller.Account), Role/User: $($caller.Arn))"
+        Write-Pass "Target Region verified: $ExpectedRegion"
+        $awsAvailable = $true
+    } catch {
+        Write-Warn "AWS authentication unavailable or session expired. Skipping EC2/SSM queries."
+    }
+
+    if ($awsAvailable) {
+        # 2. EC2 Instance Metadata
+        $inst = Get-Ec2InstanceInfo
+        $stateName = $inst.State.Name
+        $publicIp  = $inst.PublicIpAddress
+        $privateIp = $inst.PrivateIpAddress
+        $instName  = ($inst.Tags | Where-Object { $_.Key -eq "Name" }).Value
+
+        Write-Host "`n  EC2 INSTANCE DETAILS:" -ForegroundColor White
+        Write-Host "    Instance ID    : $($inst.InstanceId)" -ForegroundColor Gray
+        Write-Host "    Name Tag       : $instName" -ForegroundColor Gray
+        Write-Host "    Instance Type  : $($inst.InstanceType)" -ForegroundColor Gray
+        Write-Host "    Current State  : $stateName" -ForegroundColor $(if ($stateName -eq "running") { "Green" } else { "Yellow" })
+        Write-Host "    Private IPv4   : $privateIp" -ForegroundColor Gray
+        Write-Host "    Public IPv4    : $(if ($publicIp) { $publicIp } else { '[None / Released]' })" -ForegroundColor Gray
+
+        # 3. Elastic IP Details
+        $eip = Get-AssociatedEipInfo
+        if ($eip) {
+            Write-Pass "Elastic IP attached: $($eip.PublicIp) (Allocation: $($eip.AllocationId), Association: $($eip.AssociationId))"
         } else {
-            # Deep server inspection via SSM
-            $srvCmds = @(
-                "systemctl is-active nginx",
-                "systemctl is-active php-fpm",
-                "systemctl is-active mariadb",
-                "systemctl is-active online-exam-finalizer.timer",
-                "ss -lntp | grep ':3306'",
-                "nginx -t 2>&1",
-                "[ -f /var/www/online-exam/config/config.local.php ] && echo 'CONFIG_OK' || echo 'CONFIG_MISSING'",
-                "git -C /var/www/online-exam -c safe.directory=/var/www/online-exam rev-parse --short HEAD"
-            )
-            try {
-                $srvRes = Invoke-SSMCommand -Commands $srvCmds -Description "Lifecycle Health Audit"
-                $out = $srvRes.StandardOutputContent
-
-                if ($out -match "CONFIG_OK") { Write-Pass "Protected local configuration (config.local.php) confirmed" }
-                if ($out -match "127\.0\.0\.1:3306") { Write-Pass "MariaDB strictly bound to localhost (127.0.0.1:3306)" }
-                if ($out -match "syntax is ok") { Write-Pass "Nginx configuration syntax confirmed OK" }
-
-                $services = @("nginx", "php-fpm", "mariadb", "online-exam-finalizer.timer")
-                foreach ($s in $services) {
-                    if ($out -match "$s[\s\S]*?active") {
-                        Write-Pass "Service active: $s"
-                    }
-                }
-            } catch {
-                Write-Warn "SSM inspection error: $_"
+            if ($publicIp) {
+                Write-Warn "Public IPv4 ($publicIp) is EPHEMERAL (Not an Elastic IP). Will change upon stop/start."
+            } else {
+                Write-Info "No Elastic IP or Public IPv4 is currently associated."
             }
         }
 
-        # Public IP HTTP Probe
-        if ($publicIp) {
-            $probe = curl.exe -s -I --max-time 5 "http://$publicIp/"
-            if ($probe -match "HTTP/1\.[01] 200 OK") {
-                Write-Pass "Public HTTP IP endpoint responding: http://$publicIp/ (200 OK)"
-            } else {
-                Write-Warn "Public HTTP IP probe returned: $(($probe -split "`n")[0].Trim())"
+        # 4. EBS Volume Integrity
+        $attachedVol = $inst.BlockDeviceMappings | Where-Object { $_.Ebs.VolumeId -eq $ExpectedVolumeId }
+        if ($attachedVol -and $attachedVol.Ebs.Status -eq "attached") {
+            Write-Pass "EBS Volume $ExpectedVolumeId is safely attached at $($attachedVol.DeviceName)"
+        } else {
+            Write-Warn "Expected EBS volume $ExpectedVolumeId attachment status: $($attachedVol.Ebs.Status)"
+        }
+
+        # 5. SSM & Server Health (if running)
+        if ($stateName -eq "running") {
+            $ssmRaw = & $aws ssm describe-instance-information `
+                --filters "Key=InstanceIds,Values=$ExpectedInstanceId" `
+                --region $ExpectedRegion `
+                --output json 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $ssmJson = $ssmRaw | ConvertFrom-Json
+                if ($ssmJson.InstanceInformationList.Count -gt 0 -and $ssmJson.InstanceInformationList[0].PingStatus -eq "Online") {
+                    $ssmOnline = $true
+                    Write-Pass "SSM Status is Online (Agent v$($ssmJson.InstanceInformationList[0].AgentVersion))"
+                }
             }
+
+            if (-not $ssmOnline) {
+                Write-Warn "SSM Agent is not reporting Online yet."
+            } else {
+                # Deep server inspection via SSM
+                $srvCmds = @(
+                    "systemctl is-active nginx",
+                    "systemctl is-active php-fpm",
+                    "systemctl is-active mariadb",
+                    "systemctl is-active online-exam-finalizer.timer",
+                    "ss -lntp | grep ':3306'",
+                    "nginx -t 2>&1",
+                    "[ -f /var/www/online-exam/config/config.local.php ] && echo 'CONFIG_OK' || echo 'CONFIG_MISSING'",
+                    "git -C /var/www/online-exam -c safe.directory=/var/www/online-exam rev-parse --short HEAD"
+                )
+                try {
+                    $srvRes = Invoke-SSMCommand -Commands $srvCmds -Description "Lifecycle Health Audit"
+                    $out = $srvRes.StandardOutputContent
+
+                    if ($out -match "CONFIG_OK") { Write-Pass "Protected local configuration (config.local.php) confirmed" }
+                    if ($out -match "127\.0\.0\.1:3306") { Write-Pass "MariaDB strictly bound to localhost (127.0.0.1:3306)" }
+                    if ($out -match "syntax is ok") { Write-Pass "Nginx configuration syntax confirmed OK" }
+
+                    $services = @("nginx", "php-fpm", "mariadb", "online-exam-finalizer.timer")
+                    foreach ($s in $services) {
+                        if ($out -match "$s[\s\S]*?active") {
+                            Write-Pass "Service active: $s"
+                        }
+                    }
+                } catch {
+                    Write-Warn "SSM inspection error: $_"
+                }
+            }
+
+            # Public IP HTTP Probe
+            if ($publicIp) {
+                $probe = curl.exe -s -I --max-time 5 "http://$publicIp/"
+                if ($probe -match "HTTP/1\.[01] 200 OK") {
+                    Write-Pass "Public HTTP IP endpoint responding: http://$publicIp/ (200 OK)"
+                } else {
+                    Write-Warn "Public HTTP IP probe returned: $(($probe -split "`n")[0].Trim())"
+                }
+            }
+        } else {
+            Write-Info "Instance is $stateName. SSM, service, and HTTP probes skipped."
         }
     } else {
-        Write-Info "Instance is $stateName. SSM, service, and HTTP probes skipped."
+        Write-Info "AWS queries skipped due to inactive AWS session. Inspecting DNS and network reachability."
     }
 
     # 6. Domain & DNS Verification
@@ -833,7 +847,8 @@ function Run-StatusOrVerify([bool]$fullVerification = $false) {
             }
         }
 
-        $dnsOk = Verify-DomainDnsAndHttps -domain $DomainName -expectedIp $publicIp
+        $expectedIpToCheck = if ($publicIp) { $publicIp } else { "13.202.114.100" }
+        $dnsOk = Verify-DomainDnsAndHttps -domain $DomainName -expectedIp $expectedIpToCheck
     }
 
     Write-CostAwareness

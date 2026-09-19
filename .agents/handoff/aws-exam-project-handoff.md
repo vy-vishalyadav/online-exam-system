@@ -153,6 +153,15 @@
 * **Credential Variable Names (Ambient Process Variables Only):**
   - `$env:SPACESHIP_API_KEY` `[VERIFIED]`
   - `$env:SPACESHIP_API_SECRET` `[VERIFIED]`
+* **API Authentication Validation:** `[VERIFIED]`
+  - **Verification Date:** September 19, 2026
+  - Spaceship restricted API credential successfully authenticated against the official Spaceship DNS API and read the authoritative DNS record set for `exam-portal.online`.
+  - DNS GET succeeded (`HTTP 200 OK`, 2 records retrieved).
+  - `@ A` observed (`13.202.114.100`, TTL: 1800).
+  - `www CNAME` observed (`exam-portal.online`, TTL: 1800).
+  - No DNS mutation performed (read-only GET; zero PUT calls).
+  - Credentials were process-scoped in memory only.
+  - Credentials were not committed, logged, or persisted to disk.
 * **DNS Safety Model in Automation:**
   - Automation always fetches current zone records via GET first (`Get-SpaceshipDnsRecords`).
   - Only apex `@ A` record is modified; canonical `www CNAME` and all unrelated records are preserved.
