@@ -1,0 +1,34 @@
+{
+    "PolicyType": "EBS_SNAPSHOT_MANAGEMENT",
+    "ResourceTypes": [
+        "VOLUME"
+    ],
+    "TargetTags": [
+        {
+            "Key": "BackupPolicy",
+            "Value": "online-exam-production"
+        }
+    ],
+    "Schedules": [
+        {
+            "Name": "Daily7DayRetention",
+            "CreateRule": {
+                "Interval": 24,
+                "IntervalUnit": "HOURS",
+                "Times": [
+                    "03:00"
+                ]
+            },
+            "RetainRule": {
+                "Count": 7
+            },
+            "CopyTags": true,
+            "TagsToAdd": [
+                {
+                    "Key": "CreatedBy",
+                    "Value": "AWS-DLM"
+                }
+            ]
+        }
+    ]
+}

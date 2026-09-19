@@ -1,0 +1,20 @@
+[Unit]
+Description=Online Exam System MariaDB Daily Backup & S3 Replication
+Documentation=https://github.com/vy-vishalyadav/online-exam-system
+After=mariadb.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/online-exam-db-backup.sh
+StandardOutput=journal
+StandardError=journal
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

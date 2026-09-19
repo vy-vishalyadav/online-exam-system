@@ -1,0 +1,30 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowBackupObjectOperations",
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject"
+            ],
+            "Resource": "arn:aws:s3:::online-exam-production-backups-aps1-9032915/online-exam/mariadb/*"
+        },
+        {
+            "Sid": "AllowBackupBucketListing",
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket"
+            ],
+            "Resource": "arn:aws:s3:::online-exam-production-backups-aps1-9032915",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": [
+                        "online-exam/mariadb/*",
+                        "online-exam/mariadb"
+                    ]
+                }
+            }
+        }
+    ]
+}

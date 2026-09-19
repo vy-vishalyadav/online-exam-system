@@ -172,7 +172,8 @@
 ## 7. Skill Catalog & Operational Manuals
 
 * **AWS Instance Lifecycle (`aws-instance-lifecycle`):** `.agents/skills/aws-instance-lifecycle/` and `.aws/skills/aws-instance-lifecycle/`. Manages EC2 start/stop, EIP retention/release, and Spaceship DNS. `[VERIFIED]`
-* **AWS Production Deployment (`aws-production-deploy`):** `.agents/skills/aws-production-deploy/`. Handles zero-downtime deployment, syntax linting, health verification, and rollback logic. (Untracked locally to avoid accidental modification). `[VERIFIED]`
+* **AWS Production Deployment (`aws-production-deploy`):** `.agents/skills/aws-production-deploy/`. Handles zero-downtime deployment, syntax linting, health verification, and rollback logic. `[VERIFIED]`
+* **AWS Production Backup & Recovery (`aws-backup-recovery`):** `.agents/skills/aws-backup-recovery/`. Manages automated daily MariaDB logical backups, private S3 replication, checksum validation, systemd timer scheduling, isolated test restoration, and AWS DLM EBS snapshots. `[VERIFIED]`
 * **Package Deployment (`package-deploy`):** `.agents/skills/package-deploy/`. Used for packaging local release zip files. `[VERIFIED]`
 * **Companion Operational Documents:**
   - Load Testing Plan: [.agents/handoff/load-test-plan.md](file:///C:/xampp/htdocs/online-exam-system/.agents/handoff/load-test-plan.md) `[VERIFIED]`
@@ -181,7 +182,51 @@
 
 ---
 
-## 8. Potential Optimizations (NOT APPLIED)
+## 8. Production Backup, Recovery & Disaster Readiness
+
+* **Primary Database Recovery Mechanism:** Automated transactional MariaDB logical dump (`mariadb-dump --single-transaction --quick --routines --triggers --no-tablespaces`). `[VERIFIED]`
+* **Secondary Infrastructure Recovery Mechanism:** AWS Data Lifecycle Manager (DLM) daily EBS volume snapshots (`vol-0a0fffe887d09ba3f`, tag `BackupPolicy=online-exam-production`, 7-day retention). `[VERIFIED]`
+* **Backup Architecture Parameters:**
+  - **Local Directory:** `/var/backups/mariadb/` (Permissions `chmod 700`, owner `root:root`) `[VERIFIED]`
+  - **Local Retention:** 7 days (auto-pruned by backup script; oldest pruned only after new backup succeeds) `[VERIFIED]`
+  - **Private S3 Bucket:** `online-exam-production-backups-aps1-9032915` (Region: `ap-south-1`) `[VERIFIED]`
+  - **S3 Prefix Structure:** `s3://online-exam-production-backups-aps1-9032915/online-exam/mariadb/YYYY/MM/DD/` `[VERIFIED]`
+  - **S3 Security:** 100% Block Public Access enabled; default AES256 SSE-S3 encryption; zero public policies or ACLs `[VERIFIED]`
+  - **S3 Retention Policy:** 14 days automatic expiration via S3 Lifecycle Rule `ExpireBackupsAfter14Days` `[VERIFIED]`
+  - **Backup Schedule:** Daily at `02:30:00 UTC` (`08:00 AM IST`) via `online-exam-backup.timer` with `Persistent=true` `[VERIFIED]`
+  - **EC2 IAM Role:** `online-exam-ssm-role` with inline least-privilege policy `OnlineExamBackupS3Access` (restricted PutObject/GetObject on `online-exam/mariadb/*` and ListBucket on prefix) `[VERIFIED]`
+  - **Concurrency Guard:** `flock` on `/var/run/online-exam-backup.lock` prevents overlapping backup runs `[VERIFIED]`
+  - **Disk Space Guard:** Pre-flight check asserts $\ge 500\text{ MB}$ free space on root filesystem before dump `[VERIFIED]`
+* **Verification & Testing Status:**
+  - **Local Restore Test:** `[VERIFIED]` (`restore-test.sh` restored all 12 tables into isolated temporary database `online_exam_restore_test_*`, verified row counts matched production on 100% of tables, and dropped temporary test database).
+  - **S3 Restore Test:** `[VERIFIED]` (`restore-test.sh` downloaded S3 object, verified SHA256 checksum against S3 manifest, imported into isolated test DB, verified table row counts, and cleaned up).
+  - **Failure-Path Test:** `[VERIFIED]` (Verified concurrency lock collision cleanly halts duplicate execution with non-zero exit code).
+* **RPO & RTO Assumptions:**
+  - **RPO (Recovery Point Objective):** 24 hours (daily logical dump) or instant prior to schema migrations via `-MigrateDb`.
+  - **RTO (Recovery Time Objective):** ~15 minutes for logical database restore; ~45–60 minutes for complete EC2 instance rebuild.
+* **Cost Analysis:**
+  - S3 Backup Storage: ~10 KB per daily dump $\times$ 14 days $\approx$ 140 KB $\approx$ **$0.00 / month** (within AWS Free Tier / fraction of a cent).
+  - DLM EBS Snapshots: 10 GiB initial base + ~100–200 MB daily change $\times$ 7 days $\approx$ **~$0.55–$0.65 / month**.
+* **Production Restore Gate (STRICT HUMAN AUTHORIZATION REQUIRED):**
+  - **Automated scripts NEVER automatically restore production.**
+  - **Testing vs Production Restore Distinction:** `restore-test.sh` strictly creates and tests against temporary databases named `online_exam_restore_test_<timestamp>` and will throw an unhandled fatal error if `online_exam_db` is specified.
+  - **Authorized Production Restore Checklist:**
+    1. Confirm the disaster incident and obtain human administrator authorization.
+    2. Halt application writes: `sudo systemctl stop php-fpm`.
+    3. Take an emergency pre-restore safety dump: `sudo mariadb-dump online_exam_db > /var/backups/mariadb/emergency_pre_restore_$(date +%s).sql`.
+    4. Verify SHA256 of the target backup archive: `sha256sum -c <target-backup>.sql.gz.sha256`.
+    5. Import dump: `zcat <target-backup>.sql.gz | sudo mariadb online_exam_db`.
+    6. Verify database integrity: `mariadb online_exam_db -e "SHOW TABLES; SELECT COUNT(*) FROM results;"`.
+    7. Restart application service: `sudo systemctl start php-fpm`.
+    8. Verify public canonical HTTPS reachability: `curl.exe -I https://www.exam-portal.online/`.
+* **What is NOT Automated:**
+  - Production database restores are intentionally manual.
+  - Multi-region S3 replication is omitted to prevent cross-region egress charges.
+  - Local database credentials rotation is not automated (managed via `/var/www/online-exam/config/config.local.php`).
+
+---
+
+## 9. Potential Optimizations (NOT APPLIED)
 
 1. **`exam_sessions` Finalizer Index:**  
    `[POTENTIAL OPTIMIZATION — NOT APPLIED]`  
@@ -192,7 +237,7 @@
 
 ---
 
-## 9. Non-Negotiable Operational Rules ("DO NOT")
+## 10. Non-Negotiable Operational Rules ("DO NOT")
 
 1. **DO NOT print, echo, display, log, or persist credential values** (Spaceship API keys/secrets, AWS access keys, database passwords, private keys).
 2. **DO NOT write credentials to disk**, Git repositories, markdown files, or environment config files.
@@ -209,7 +254,7 @@
 
 ---
 
-## 10. Fresh AGY Session Start Procedure
+## 11. Fresh AGY Session Start Procedure
 
 When starting a completely fresh Antigravity / agy session for this project, follow this exact step-by-step checklist:
 

@@ -154,13 +154,20 @@ mariadb -e "SELECT COUNT(*) AS total_results FROM online_exam_db.results;"
 ```
 
 ### Step 3: Perform Post-Exam Logical Database Backup
-Export a timestamped logical dump before any administrative changes:
+Trigger the production backup automation immediately following examination completion:
 ```bash
 # Via SSM Run Command:
-mariadb-dump online_exam_db > /var/backups/online_exam_post_exam_$(date +%Y%m%d_%H%M%S).sql
-gzip /var/backups/online_exam_post_exam_*.sql
-ls -lh /var/backups/
+sudo /usr/local/sbin/online-exam-db-backup.sh
+
+# Or trigger via systemd:
+sudo systemctl start online-exam-backup.service
+
+# Verify backup execution and S3 upload:
+sudo journalctl -u online-exam-backup.service -n 25 --no-pager
+aws s3 ls s3://online-exam-production-backups-aps1-9032915/online-exam/mariadb/ --recursive --human-readable --region ap-south-1
 ```
+> [!NOTE]
+> This command creates a consistent InnoDB snapshot, verifies archive integrity, computes a SHA256 checksum manifest, uploads both files to the private S3 bucket, and verifies the remote object via S3 `HeadObject`.
 
 ### Step 4: Optional Cost-Saving Shutdown (Post-Exam Idle)
 If no further exams are scheduled for days/weeks:
@@ -174,7 +181,52 @@ If no further exams are scheduled for days/weeks:
 
 ---
 
-## 4. Concurrency Capacities & Operational Thresholds (Benchmarked)
+## 4. Production Database Restore Protocol (HUMAN AUTHORIZATION GATE)
+
+> [!CAUTION]
+> **PRODUCTION RESTORE IS DANGEROUS AND INTENTIONALLY MANUAL.**
+> Automated tools and recovery test harnesses (`restore-test.sh`) are strictly prohibited from touching `online_exam_db`.
+> Live production database restoration requires explicit human authorization and adherence to the following sequence:
+
+1. **Verify Incident & Authorize**: Confirm data loss or corruption with the project lead.
+2. **Halt Application Traffic**: Stop PHP-FPM to prevent ongoing student writes:
+   ```bash
+   sudo systemctl stop php-fpm
+   ```
+3. **Emergency Pre-Restore Safety Dump**: Take a snapshot of the current database state before modifying anything:
+   ```bash
+   sudo mariadb-dump online_exam_db > /var/backups/mariadb/emergency_before_restore_$(date +%s).sql
+   ```
+4. **Select Target Backup Archive**:
+   ```bash
+   # From local disk:
+   TARGET_BACKUP="/var/backups/mariadb/online_exam_db_<YYYY-MM-DD_HH-MM-SS>.sql.gz"
+
+   # Or download from private S3 bucket:
+   aws s3 cp s3://online-exam-production-backups-aps1-9032915/online-exam/mariadb/YYYY/MM/DD/<file>.sql.gz .
+   aws s3 cp s3://online-exam-production-backups-aps1-9032915/online-exam/mariadb/YYYY/MM/DD/<file>.sql.gz.sha256 .
+   ```
+5. **Verify Checksum**:
+   ```bash
+   sha256sum -c "${TARGET_BACKUP}.sha256"
+   ```
+6. **Import Dump into Production Database**:
+   ```bash
+   zcat "${TARGET_BACKUP}" | sudo mariadb online_exam_db
+   ```
+7. **Verify Database Integrity**:
+   ```bash
+   sudo mariadb online_exam_db -e "SHOW TABLES; SELECT COUNT(*) FROM results; SELECT COUNT(*) FROM exam_sessions;"
+   ```
+8. **Reopen Application Service**:
+   ```bash
+   sudo systemctl start php-fpm
+   curl.exe -I https://www.exam-portal.online/
+   ```
+
+---
+
+## 5. Concurrency Capacities & Operational Thresholds (Benchmarked)
 
 > **Reference:** Complete benchmark data is documented in [.agents/handoff/load-test-results.md](file:///C:/xampp/htdocs/online-exam-system/.agents/handoff/load-test-results.md).
 
@@ -187,7 +239,7 @@ If no further exams are scheduled for days/weeks:
 
 ---
 
-## 5. Emergency Incident Decision Tree
+## 6. Emergency Incident Decision Tree
 
 | Failure Symptom | Probable Cause | Immediate Diagnostic Command | Corrective Action |
 | :--- | :--- | :--- | :--- |
